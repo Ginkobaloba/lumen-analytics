@@ -2,26 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+  Lumen Analytics theme.
 
-@media (prefers-color-scheme: dark) {
+  Palette source: PARADIGM_PLAN.md Section 3, via the S02 value comments in
+  @paradigm/brand-tokens dist/tokens.css. The package itself is still the
+  empty-slot scaffold (0.1.0-scaffold), so values are pinned here and will be
+  swapped for the package import when v1.0.0 tags. Lumen is light-theme only:
+  warm off-white surfaces (Bone/Paper), forest green accent, muted gold and
+  terracotta reserved for anomaly severity. No dark mode by design.
+*/
+
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #f4f5f4; /* Bone */
+    --foreground: #181c1b; /* Onyx */
+    --card: #ffffff; /* Paper */
+    --card-foreground: #181c1b;
+    --popover: #ffffff;
+    --popover-foreground: #181c1b;
+    --primary: #178049; /* Pine */
+    --primary-foreground: #ffffff;
+    --secondary: #e6e8e7; /* Ash */
+    --secondary-foreground: #181c1b;
+    --muted: #eceeed;
+    --muted-foreground: #3a403d; /* Iron (Slate fails AA on white) */
+    --accent: #e4f1ea; /* green-tinted hover surface */
+    --accent-foreground: #0f5e36; /* Spruce */
+    --destructive: #c73c34;
+    --destructive-foreground: #ffffff;
+    --border: #e6e8e7;
+    --input: #e6e8e7;
+    --ring: #1f9d57; /* Paradigm Green */
+    --chart-1: #178049; /* Pine: primary series */
+    --chart-2: #2f6e99; /* Info blue: secondary series */
+    --chart-3: #d9a441; /* Amber: anomaly moderate only */
+    --chart-4: #be5b41; /* Terracotta: anomaly high / bad only */
+    --chart-5: #6dc893; /* Meadow: tertiary series */
+    --radius: 0.5rem;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading;
   }
 }
