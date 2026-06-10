@@ -40,3 +40,6 @@ next-env.d.ts
 
 # per-device session log (SESSION_PROTOCOL.md)
 .session-log
+
+# PR body scratch file
+.pr-body.md
