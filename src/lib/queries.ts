@@ -71,6 +71,24 @@ export function getKpis(metricIds: string[]): Kpi[] {
   });
 }
 
+export function getAllAnomalies(): AnomalyListItem[] {
+  const db = openDb();
+  const rows = db
+    .prepare(
+      `SELECT a.*, u.name AS assignee_name
+       FROM anomalies a
+       LEFT JOIN users u ON u.id = a.assigned_to
+       ORDER BY a.date DESC,
+         CASE a.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                         WHEN 'medium' THEN 2 ELSE 3 END`,
+    )
+    .all() as AnomalyListItem[];
+  return rows.map((r) => ({
+    ...r,
+    metric_name: METRIC_BY_ID[r.metric_id]?.name ?? r.metric_id,
+  }));
+}
+
 export function getRecentAnomalies(limit = 8): AnomalyListItem[] {
   const db = openDb();
   const rows = db
