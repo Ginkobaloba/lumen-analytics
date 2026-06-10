@@ -1,7 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AnomalyFeed } from "@/components/anomaly-feed";
-import { RevenueTrendChart } from "@/components/charts/revenue-trend-chart";
 import { KpiCard } from "@/components/kpi-card";
+import { OverviewExplorer } from "@/components/overview-explorer";
 import { formatDateLong } from "@/lib/format";
 import { getOverviewData } from "@/lib/queries";
 
@@ -48,21 +46,11 @@ export default function OverviewPage() {
         ))}
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Card className="shadow-sm xl:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Monthly recurring revenue</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Daily MRR with detected anomalies marked
-            </p>
-          </CardHeader>
-          <CardContent>
-            <RevenueTrendChart data={revenueTrend} markers={revenueMarkers} />
-          </CardContent>
-        </Card>
-
-        <AnomalyFeed anomalies={recentAnomalies} />
-      </section>
+      <OverviewExplorer
+        revenueTrend={revenueTrend}
+        revenueMarkers={revenueMarkers}
+        recentAnomalies={recentAnomalies}
+      />
     </div>
   );
 }
