@@ -22,10 +22,15 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
 - 2.5 anomaly detection + cause attribution backend: DONE (rolling-median
   STL-style decomposition, episode grouping, per-slice attribution,
   narrative generation; `npm run detect`, tested)
-- Remaining: 2.4 metrics explorer, 2.6 anomaly side panel UI,
-  2.7 customers, 2.8 funnel, 2.9 cohorts, 2.10 anomaly log,
-  2.11 stubs, 2.12 marketing landing, 2.13 Work page entry, demo auth,
-  Dockerfile + deploy via Phase 0.
+- 2.6 anomaly drill-down side panel: DONE (PR #3; detail + status APIs,
+  expected-vs-actual charts, contributor mini charts, triage actions)
+- 2.10 anomaly log: DONE (PR #4; filters, deep links, opens the panel)
+- Remaining: 2.4 metrics explorer + detail, 2.7 customers list + detail,
+  2.8 funnel Sankey, 2.9 cohort heatmap, 2.11 stubs, 2.12 marketing
+  landing, 2.13 Work page entry, demo auth (copy AxlePoint's cookie +
+  middleware pattern), Dockerfile + deploy via Phase 0 (port 8103,
+  `npm run seed:full` at image build, AxlePoint's better-sqlite3
+  build-deps fix).
 
 ## Hard rules
 
