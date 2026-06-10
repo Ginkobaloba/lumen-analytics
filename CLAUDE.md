@@ -17,7 +17,15 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
 
 - 2.1 scaffold: DONE (Next.js 14, TS, Tailwind, shadcn/ui, brand wiring)
 - 2.2 schema + metrics generator: DONE (seeded, tested)
-- 2.3+ executive overview, metrics explorer, anomaly backend, etc.: TODO
+- 2.3 executive overview: DONE (PR #1; app shell, KPI cards, MRR trend,
+  anomaly feed, Phase 0 banner)
+- 2.5 anomaly detection + cause attribution backend: DONE (rolling-median
+  STL-style decomposition, episode grouping, per-slice attribution,
+  narrative generation; `npm run detect`, tested)
+- Remaining: 2.4 metrics explorer, 2.6 anomaly side panel UI,
+  2.7 customers, 2.8 funnel, 2.9 cohorts, 2.10 anomaly log,
+  2.11 stubs, 2.12 marketing landing, 2.13 Work page entry, demo auth,
+  Dockerfile + deploy via Phase 0.
 
 ## Hard rules
 
@@ -31,8 +39,9 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
 - Brand values are hardcoded pending @paradigm/brand-tokens v1.0.0
   (still 0.1.0-scaffold with empty slots). Swap when it ships.
 - The SQLite db is a build artifact: never commit it, always
-  `npm run seed`. Generator changes must keep tests green
-  (`npm run test`) -- they pin the anomaly story the UI depends on.
+  `npm run seed:full` (seed + detect). Generator or detector changes must
+  keep tests green (`npm run test`) -- they pin the anomaly story the UI
+  depends on (windows, slices, severities, statuses).
 
 ## Verify before claiming done
 
