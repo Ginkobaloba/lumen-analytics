@@ -37,3 +37,6 @@ next-env.d.ts
 
 # seeded demo database (build artifact)
 /data/
+
+# per-device session log (SESSION_PROTOCOL.md)
+.session-log
