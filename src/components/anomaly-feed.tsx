@@ -1,5 +1,6 @@
+"use client";
+
 import { ArrowDownRight, ArrowUpRight, CheckCircle2 } from "lucide-react";
-import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,13 @@ const STATUS_LABEL: Record<AnomalyListItem["status"], string> = {
   false_positive: "False positive",
 };
 
-export function AnomalyFeed({ anomalies }: { anomalies: AnomalyListItem[] }) {
+export function AnomalyFeed({
+  anomalies,
+  onSelect,
+}: {
+  anomalies: AnomalyListItem[];
+  onSelect: (id: string) => void;
+}) {
   return (
     <Card className="shadow-sm">
       <CardHeader className="pb-3">
@@ -40,9 +47,10 @@ export function AnomalyFeed({ anomalies }: { anomalies: AnomalyListItem[] }) {
           <ul className="divide-y">
             {anomalies.map((a) => (
               <li key={a.id} className="py-3 first:pt-0 last:pb-0">
-                <Link
-                  href={`/app/anomalies?focus=${a.id}`}
-                  className="group block space-y-1"
+                <button
+                  type="button"
+                  onClick={() => onSelect(a.id)}
+                  className="group block w-full space-y-1 text-left"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 text-sm font-medium group-hover:text-brand-pine">
@@ -62,7 +70,7 @@ export function AnomalyFeed({ anomalies }: { anomalies: AnomalyListItem[] }) {
                     {STATUS_LABEL[a.status]}
                     {a.assignee_name ? ` · ${a.assignee_name}` : ""}
                   </p>
-                </Link>
+                </button>
               </li>
             ))}
           </ul>
