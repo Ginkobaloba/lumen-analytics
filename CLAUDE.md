@@ -34,11 +34,12 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
   drop-off sinks, 30/90/365-day toggle, stage stat cards)
 - 2.9 cohort heatmap: DONE (PR #8; NRR + logo retention triangle by
   signup cohort, brand color ramp, also esbuild/postcss override bumps)
-- Remaining: 2.11 stubs, 2.12 marketing
-  landing, 2.13 Work page entry, demo auth (copy AxlePoint's cookie +
-  middleware pattern), Dockerfile + deploy via Phase 0 (port 8103,
-  `npm run seed:full` at image build, AxlePoint's better-sqlite3
-  build-deps fix).
+- 2.11 stubs: DONE (PR #9; segments with live counts, integrations
+  catalog, settings with team + read-only toggles)
+- Remaining: demo auth (copy AxlePoint's cookie + middleware pattern),
+  2.12 marketing landing, 2.13 Work page entry, Dockerfile + deploy via
+  Phase 0 (port 8103, `npm run seed:full` at image build, AxlePoint's
+  better-sqlite3 build-deps fix).
 
 ## Hard rules
 
