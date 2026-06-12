@@ -30,7 +30,9 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
   detail with anomaly markers opening the panel, segment-slice toggle)
 - 2.7 customers: DONE (PR #6; 500-row table with search/filter/sort/
   pagination, account detail with MRR history, usage charts, activity)
-- Remaining: 2.8 funnel Sankey, 2.9 cohort heatmap, 2.11 stubs, 2.12 marketing
+- 2.8 funnel Sankey: DONE (PR #7; d3-sankey acquisition funnel with
+  drop-off sinks, 30/90/365-day toggle, stage stat cards)
+- Remaining: 2.9 cohort heatmap, 2.11 stubs, 2.12 marketing
   landing, 2.13 Work page entry, demo auth (copy AxlePoint's cookie +
   middleware pattern), Dockerfile + deploy via Phase 0 (port 8103,
   `npm run seed:full` at image build, AxlePoint's better-sqlite3
