@@ -372,6 +372,76 @@ export function getCustomerDetail(customerId: string): CustomerDetailData | null
   };
 }
 
+export interface FunnelStage {
+  id: string;
+  label: string;
+  count: number;
+}
+
+export interface FunnelWindow {
+  days: number;
+  label: string;
+  stages: FunnelStage[];
+}
+
+export interface FunnelData {
+  windows: FunnelWindow[];
+  asOf: string;
+}
+
+const FUNNEL_STAGES: { id: string; label: string }[] = [
+  { id: "signups", label: "Signups" },
+  { id: "trials_started", label: "Trials started" },
+  { id: "activations", label: "Activated" },
+  { id: "new_customers", label: "Converted to paid" },
+];
+
+const FUNNEL_WINDOWS: { days: number; label: string }[] = [
+  { days: 30, label: "30 days" },
+  { days: 90, label: "90 days" },
+  { days: 365, label: "12 months" },
+];
+
+/** Acquisition funnel sums for /app/funnels, one entry per window.
+    Stage counts are clamped to be non-increasing so daily noise in the
+    generated series can never produce a negative drop-off band. */
+export function getFunnelData(): FunnelData {
+  const db = openDb();
+  const asOf = (
+    db
+      .prepare(`SELECT MAX(date) AS d FROM metrics_daily WHERE segment_type = 'all'`)
+      .get() as { d: string }
+  ).d;
+
+  const stmt = db.prepare(
+    `SELECT metric_id, SUM(value) AS total FROM metrics_daily
+     WHERE segment_type = 'all' AND metric_id IN (${FUNNEL_STAGES.map(() => "?").join(", ")})
+       AND date > ?
+     GROUP BY metric_id`,
+  );
+
+  const windows = FUNNEL_WINDOWS.map(({ days, label }) => {
+    const from = new Date(`${asOf}T00:00:00Z`);
+    from.setUTCDate(from.getUTCDate() - days);
+    const totals = new Map(
+      (
+        stmt.all(
+          ...FUNNEL_STAGES.map((s) => s.id),
+          from.toISOString().slice(0, 10),
+        ) as { metric_id: string; total: number }[]
+      ).map((r) => [r.metric_id, r.total]),
+    );
+    let cap = Infinity;
+    const stages = FUNNEL_STAGES.map(({ id, label: stageLabel }) => {
+      cap = Math.min(cap, Math.round(totals.get(id) ?? 0));
+      return { id, label: stageLabel, count: cap };
+    });
+    return { days, label, stages };
+  });
+
+  return { windows, asOf };
+}
+
 export interface OverviewData {
   kpis: Kpi[];
   revenueTrend: SeriesPoint[];
