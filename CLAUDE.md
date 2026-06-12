@@ -36,10 +36,11 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
   signup cohort, brand color ramp, also esbuild/postcss override bumps)
 - 2.11 stubs: DONE (PR #9; segments with live counts, integrations
   catalog, settings with team + read-only toggles)
-- Remaining: demo auth (copy AxlePoint's cookie + middleware pattern),
-  2.12 marketing landing, 2.13 Work page entry, Dockerfile + deploy via
-  Phase 0 (port 8103, `npm run seed:full` at image build, AxlePoint's
-  better-sqlite3 build-deps fix).
+- demo auth: DONE (PR #10; AxlePoint cookie + middleware pattern,
+  lumen_demo_session gating /app, one-click sign-in/out)
+- Remaining: 2.12 marketing landing, 2.13 Work page entry, Dockerfile +
+  deploy via Phase 0 (port 8103, `npm run seed:full` at image build,
+  AxlePoint's better-sqlite3 build-deps fix).
 
 ## Hard rules
 
