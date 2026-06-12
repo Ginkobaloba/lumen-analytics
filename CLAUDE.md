@@ -38,9 +38,11 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
   catalog, settings with team + read-only toggles)
 - demo auth: DONE (PR #10; AxlePoint cookie + middleware pattern,
   lumen_demo_session gating /app, one-click sign-in/out)
-- Remaining: 2.12 marketing landing, 2.13 Work page entry, Dockerfile +
-  deploy via Phase 0 (port 8103, `npm run seed:full` at image build,
-  AxlePoint's better-sqlite3 build-deps fix).
+- 2.12 marketing landing: DONE (PR #11; hero with SVG anomaly visual,
+  fictional logo strip with microcaption, features, CTA, banner)
+- Remaining: Dockerfile + deploy via Phase 0 (port 8103, `npm run
+  seed:full` at image build, AxlePoint's better-sqlite3 build-deps
+  fix), 2.13 Work page entry on paradigm-site.
 
 ## Hard rules
 
