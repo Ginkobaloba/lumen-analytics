@@ -1,5 +1,12 @@
 import "server-only";
-import { METRIC_BY_ID, type MetricDef } from "./data/catalog";
+import {
+  METRIC_BY_ID,
+  METRICS,
+  SEGMENT_DIMENSIONS,
+  type MetricCategory,
+  type MetricDef,
+  type SegmentDimension,
+} from "./data/catalog";
 import { openDb } from "./db";
 
 export interface SeriesPoint {
@@ -122,6 +129,133 @@ export function getAnomalyMarkers(metricIds: string[]): AnomalyListItem[] {
     ...r,
     metric_name: METRIC_BY_ID[r.metric_id]?.name ?? r.metric_id,
   }));
+}
+
+export interface MetricSummary extends Kpi {
+  anomalyCount: number;
+}
+
+export interface MetricCategoryGroup {
+  category: MetricCategory;
+  metrics: MetricSummary[];
+}
+
+/** Display order and headings for the metrics explorer. */
+export const CATEGORY_LABEL: Record<MetricCategory, string> = {
+  revenue: "Revenue",
+  customers: "Customers",
+  conversion: "Conversion",
+  engagement: "Engagement",
+  support: "Support",
+};
+
+/** Full catalog snapshot for /app/metrics, grouped by category in
+    catalog order. */
+export function getMetricsExplorerData(): MetricCategoryGroup[] {
+  const db = openDb();
+  const counts = new Map(
+    (
+      db
+        .prepare(`SELECT metric_id, COUNT(*) AS n FROM anomalies GROUP BY metric_id`)
+        .all() as { metric_id: string; n: number }[]
+    ).map((r) => [r.metric_id, r.n]),
+  );
+  const kpis = getKpis(METRICS.map((m) => m.id));
+
+  const groups: MetricCategoryGroup[] = [];
+  for (const kpi of kpis) {
+    const summary: MetricSummary = {
+      ...kpi,
+      anomalyCount: counts.get(kpi.metric.id) ?? 0,
+    };
+    const group = groups.find((g) => g.category === kpi.metric.category);
+    if (group) group.metrics.push(summary);
+    else groups.push({ category: kpi.metric.category, metrics: [summary] });
+  }
+  return groups;
+}
+
+export interface SliceSeries {
+  value: string;
+  series: SeriesPoint[];
+}
+
+export interface MetricSliceDimension {
+  dimension: SegmentDimension;
+  slices: SliceSeries[];
+}
+
+export interface MetricDetailData {
+  metric: MetricDef;
+  series: SeriesPoint[];
+  anomalies: AnomalyListItem[];
+  /** Per-dimension slice series; empty for unsliced metrics. */
+  dimensions: MetricSliceDimension[];
+  current: number;
+  delta: number | null;
+  asOf: string;
+}
+
+/** Everything /app/metrics/[id] needs; null for unknown metric ids. */
+export function getMetricDetail(metricId: string): MetricDetailData | null {
+  const metric = METRIC_BY_ID[metricId];
+  if (!metric) return null;
+
+  const db = openDb();
+  const series = getTopLevelSeries(metricId, 365);
+  const [kpi] = getKpis([metricId]);
+
+  const anomalies = (
+    db
+      .prepare(
+        `SELECT a.*, u.name AS assignee_name
+         FROM anomalies a
+         LEFT JOIN users u ON u.id = a.assigned_to
+         WHERE a.metric_id = ?
+         ORDER BY a.date DESC`,
+      )
+      .all(metricId) as AnomalyListItem[]
+  ).map((r) => ({ ...r, metric_name: metric.name }));
+
+  const dimensions: MetricSliceDimension[] = [];
+  if (metric.sliced && series.length > 0) {
+    const fromDate = series[0].date;
+    const sliceStmt = db.prepare(
+      `SELECT segment_value, date, value FROM metrics_daily
+       WHERE metric_id = ? AND segment_type = ? AND date >= ?
+       ORDER BY date ASC`,
+    );
+    for (const [dimension, values] of Object.entries(SEGMENT_DIMENSIONS)) {
+      const rows = sliceStmt.all(metricId, dimension, fromDate) as {
+        segment_value: string;
+        date: string;
+        value: number;
+      }[];
+      const byValue = new Map<string, SeriesPoint[]>();
+      for (const row of rows) {
+        let points = byValue.get(row.segment_value);
+        if (!points) byValue.set(row.segment_value, (points = []));
+        points.push({ date: row.date, value: row.value });
+      }
+      dimensions.push({
+        dimension: dimension as SegmentDimension,
+        // Catalog order, not insertion order, so legends are stable.
+        slices: values
+          .filter((v) => byValue.has(v))
+          .map((v) => ({ value: v, series: byValue.get(v)! })),
+      });
+    }
+  }
+
+  return {
+    metric,
+    series,
+    anomalies,
+    dimensions,
+    current: kpi.current,
+    delta: kpi.delta,
+    asOf: series[series.length - 1]?.date ?? "",
+  };
 }
 
 export interface OverviewData {

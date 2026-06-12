@@ -43,3 +43,6 @@ next-env.d.ts
 
 # PR body scratch file
 .pr-body.md
+
+# local preview config
+/.claude/
