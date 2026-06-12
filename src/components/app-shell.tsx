@@ -7,6 +7,7 @@ import {
   Grid3X3,
   LayoutDashboard,
   LineChart,
+  LogOut,
   Settings,
   Users,
   Waypoints,
@@ -76,6 +77,26 @@ function NavLinks({ orientation }: { orientation: "vertical" | "horizontal" }) {
   );
 }
 
+function SessionChip() {
+  return (
+    <div className="flex items-center justify-between gap-2 px-2">
+      <span className="rounded-full bg-brand-pine/10 px-2.5 py-1 font-mono text-[11px] font-medium text-brand-forest">
+        demo user
+      </span>
+      <form method="POST" action="/api/session?signout=1">
+        <button
+          type="submit"
+          aria-label="Sign out"
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+        >
+          <LogOut className="h-3.5 w-3.5" aria-hidden />
+          Sign out
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
@@ -83,14 +104,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="hidden w-56 shrink-0 border-r bg-card px-3 py-5 lg:flex lg:flex-col lg:gap-6">
         <Wordmark />
         <NavLinks orientation="vertical" />
-        <p className="mt-auto px-2 text-[11px] leading-relaxed text-muted-foreground">
-          Demo workspace. All data is synthetic.
-        </p>
+        <div className="mt-auto space-y-3">
+          <SessionChip />
+          <p className="px-2 text-[11px] leading-relaxed text-muted-foreground">
+            Demo workspace. All data is synthetic.
+          </p>
+        </div>
       </aside>
 
       {/* Mobile header */}
       <header className="flex flex-col gap-3 border-b bg-card px-4 py-3 lg:hidden">
-        <Wordmark />
+        <div className="flex items-center justify-between">
+          <Wordmark />
+          <SessionChip />
+        </div>
         <NavLinks orientation="horizontal" />
       </header>
 
