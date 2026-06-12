@@ -442,6 +442,96 @@ export function getFunnelData(): FunnelData {
   return { windows, asOf };
 }
 
+export interface CohortRow {
+  /** Cohort signup month (first-of-month ISO date). */
+  month: string;
+  size: number;
+  baseMrr: number;
+  /** Percent per month offset; null outside the triangle. */
+  nrr: (number | null)[];
+  logo: (number | null)[];
+}
+
+export interface CohortData {
+  /** The 12 trailing months covered by customer_mrr_monthly. */
+  months: string[];
+  rows: CohortRow[];
+  asOf: string;
+}
+
+/** Signup-month cohorts over the trailing 12 months for /app/cohorts:
+    net revenue retention (cohort MRR vs month 0) and logo retention
+    (share of cohort accounts not yet churned). */
+export function getCohortData(): CohortData {
+  const db = openDb();
+  const months = (
+    db
+      .prepare(`SELECT DISTINCT month FROM customer_mrr_monthly ORDER BY month ASC`)
+      .all() as { month: string }[]
+  ).map((r) => r.month);
+  if (months.length === 0) return { months: [], rows: [], asOf: "" };
+
+  const monthIndex = new Map(months.map((m, i) => [m, i]));
+  const customers = db
+    .prepare(
+      `SELECT id, signup_date, churned_at FROM customers
+       WHERE substr(signup_date, 1, 7) >= substr(?, 1, 7)
+       ORDER BY signup_date ASC`,
+    )
+    .all(months[0]) as { id: string; signup_date: string; churned_at: string | null }[];
+
+  const mrrByCustomerMonth = new Map<string, number>();
+  for (const r of db
+    .prepare(`SELECT customer_id, month, mrr FROM customer_mrr_monthly`)
+    .all() as { customer_id: string; month: string; mrr: number }[]) {
+    mrrByCustomerMonth.set(`${r.customer_id}|${r.month}`, r.mrr);
+  }
+
+  const byCohort = new Map<string, typeof customers>();
+  for (const c of customers) {
+    const cohort = `${c.signup_date.slice(0, 7)}-01`;
+    if (!monthIndex.has(cohort)) continue;
+    let members = byCohort.get(cohort);
+    if (!members) byCohort.set(cohort, (members = []));
+    members.push(c);
+  }
+
+  const rows: CohortRow[] = [...byCohort.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([cohort, members]) => {
+      const mi = monthIndex.get(cohort)!;
+      const sumMrrAt = (m: string) =>
+        members.reduce(
+          (s, c) => s + (mrrByCustomerMonth.get(`${c.id}|${m}`) ?? 0),
+          0,
+        );
+      const baseMrr = sumMrrAt(cohort);
+
+      const nrr: (number | null)[] = [];
+      const logo: (number | null)[] = [];
+      for (let k = 0; k < months.length; k++) {
+        const idx = mi + k;
+        if (idx >= months.length) {
+          nrr.push(null);
+          logo.push(null);
+          continue;
+        }
+        const m = months[idx];
+        nrr.push(
+          baseMrr > 0 ? Number(((sumMrrAt(m) / baseMrr) * 100).toFixed(1)) : null,
+        );
+        const retained = members.filter(
+          (c) => c.churned_at === null || c.churned_at.slice(0, 7) > m.slice(0, 7),
+        ).length;
+        logo.push(Number(((retained / members.length) * 100).toFixed(1)));
+      }
+
+      return { month: cohort, size: members.length, baseMrr, nrr, logo };
+    });
+
+  return { months, rows, asOf: months[months.length - 1] };
+}
+
 export interface OverviewData {
   kpis: Kpi[];
   revenueTrend: SeriesPoint[];
