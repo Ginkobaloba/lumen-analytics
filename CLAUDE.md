@@ -40,9 +40,14 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
   lumen_demo_session gating /app, one-click sign-in/out)
 - 2.12 marketing landing: DONE (PR #11; hero with SVG anomaly visual,
   fictional logo strip with microcaption, features, CTA, banner)
-- Remaining: Dockerfile + deploy via Phase 0 (port 8103, `npm run
-  seed:full` at image build, AxlePoint's better-sqlite3 build-deps
-  fix), 2.13 Work page entry on paradigm-site.
+- Dockerfile + deploy: DONE (PR #12). LIVE at
+  https://lumenanalytics.projectnexuscode.org (port 8103, DREWSPC only,
+  BROOKFIELD pending the ssh icacls fix). Redeploy refreshes the data
+  window: `cloudflare-config\scripts\deploy-demo.ps1 -Name
+  lumenanalytics -ContextPath C:\dev\lumen-analytics -InternalPort 3000
+  -VerifyContent "Lumen"`.
+- Remaining: 2.13 Work page entry, requested from the paradigm-site
+  copy session (their PR #31/#33 pattern) via the running handoff.
 
 ## Hard rules
 
