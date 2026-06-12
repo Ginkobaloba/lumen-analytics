@@ -3,8 +3,11 @@ import {
   METRIC_BY_ID,
   METRICS,
   SEGMENT_DIMENSIONS,
+  type Geography,
+  type Industry,
   type MetricCategory,
   type MetricDef,
+  type PlanTier,
   type SegmentDimension,
 } from "./data/catalog";
 import { openDb } from "./db";
@@ -255,6 +258,117 @@ export function getMetricDetail(metricId: string): MetricDetailData | null {
     current: kpi.current,
     delta: kpi.delta,
     asOf: series[series.length - 1]?.date ?? "",
+  };
+}
+
+export interface CustomerListItem {
+  id: string;
+  name: string;
+  domain: string;
+  plan_tier: PlanTier;
+  geography: Geography;
+  industry: Industry;
+  signup_date: string;
+  status: "active" | "churned";
+  mrr: number;
+  seats: number;
+  churn_risk: number;
+  expansion_score: number;
+  owner_name: string;
+}
+
+/** All customers for the /app/customers table; filtering, sorting, and
+    paging happen client-side (500 rows). */
+export function getCustomersList(): CustomerListItem[] {
+  const db = openDb();
+  return db
+    .prepare(
+      `SELECT c.id, c.name, c.domain, c.plan_tier, c.geography, c.industry,
+              c.signup_date, c.status, c.mrr, c.seats, c.churn_risk,
+              c.expansion_score, u.name AS owner_name
+       FROM customers c
+       JOIN users u ON u.id = c.owner_user_id
+       ORDER BY c.mrr DESC, c.name ASC`,
+    )
+    .all() as CustomerListItem[];
+}
+
+export interface CustomerEvent {
+  type: string;
+  occurred_at: string;
+  properties: Record<string, unknown>;
+}
+
+export interface CustomerDetailData {
+  customer: CustomerListItem & {
+    last_active_date: string | null;
+    churned_at: string | null;
+  };
+  owner: { name: string; role: string; initials: string; color: string };
+  mrrHistory: { month: string; mrr: number }[];
+  usage: { date: string; active_users: number; api_calls: number }[];
+  events: CustomerEvent[];
+}
+
+/** Everything /app/customers/[id] needs; null for unknown ids. */
+export function getCustomerDetail(customerId: string): CustomerDetailData | null {
+  const db = openDb();
+  const row = db
+    .prepare(
+      `SELECT c.*, u.name AS owner_name, u.role AS owner_role,
+              u.initials AS owner_initials, u.color AS owner_color
+       FROM customers c
+       JOIN users u ON u.id = c.owner_user_id
+       WHERE c.id = ?`,
+    )
+    .get(customerId) as
+    | (CustomerDetailData["customer"] & {
+        owner_role: string;
+        owner_initials: string;
+        owner_color: string;
+      })
+    | undefined;
+  if (!row) return null;
+
+  const mrrHistory = db
+    .prepare(
+      `SELECT month, mrr FROM customer_mrr_monthly
+       WHERE customer_id = ? ORDER BY month ASC`,
+    )
+    .all(customerId) as { month: string; mrr: number }[];
+
+  const usage = db
+    .prepare(
+      `SELECT date, active_users, api_calls FROM customer_usage_daily
+       WHERE customer_id = ? ORDER BY date ASC`,
+    )
+    .all(customerId) as CustomerDetailData["usage"];
+
+  const events = (
+    db
+      .prepare(
+        `SELECT type, occurred_at, properties FROM events
+         WHERE customer_id = ? ORDER BY occurred_at DESC LIMIT 12`,
+      )
+      .all(customerId) as { type: string; occurred_at: string; properties: string }[]
+  ).map((e) => ({
+    type: e.type,
+    occurred_at: e.occurred_at,
+    properties: JSON.parse(e.properties) as Record<string, unknown>,
+  }));
+
+  const { owner_role, owner_initials, owner_color, ...customer } = row;
+  return {
+    customer,
+    owner: {
+      name: customer.owner_name,
+      role: owner_role,
+      initials: owner_initials,
+      color: owner_color,
+    },
+    mrrHistory,
+    usage,
+    events,
   };
 }
 
