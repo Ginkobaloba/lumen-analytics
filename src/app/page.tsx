@@ -9,6 +9,7 @@ import {
   Users,
 } from "lucide-react";
 import ParadigmBanner from "@/components/paradigm-banner";
+import PortalTokenClaim from "@/components/portal-token-claim";
 
 /*
   Chunk 2.12 marketing landing. Server-rendered, no chart libraries: the
@@ -172,6 +173,7 @@ export default function Home({
   return (
     <>
       <ParadigmBanner />
+      <PortalTokenClaim />
       <main className="min-h-screen">
         {/* Header */}
         <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
