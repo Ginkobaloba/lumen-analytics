@@ -88,6 +88,7 @@ beforeEach(() => {
   process.env.PORTAL_JWKS_URL = JWKS_URL;
   process.env.PORTAL_EXPECTED_ISSUER = ISSUER;
   process.env.PORTAL_EXPECTED_AUD = AUDIENCE;
+  process.env.SESSION_SECRET = "a".repeat(48);
   vi.resetModules();
 });
 
@@ -97,6 +98,7 @@ afterEach(() => {
   delete process.env.PORTAL_JWKS_URL;
   delete process.env.PORTAL_EXPECTED_ISSUER;
   delete process.env.PORTAL_EXPECTED_AUD;
+  delete process.env.SESSION_SECRET;
 });
 
 async function loadRouteFresh() {
@@ -107,10 +109,11 @@ async function loadRouteFresh() {
 }
 
 describe("POST /api/portal/handoff", () => {
-  it("verifies a valid portal token, sets the demo cookie, returns /app redirect target", async () => {
+  it("verifies a valid portal token, sets the demo cookie with a signed JWT, returns /app redirect target", async () => {
     const key = await makeKey("active-1");
     installJwksFetch([key.jwk]);
-    const token = await mintToken(key, { sub: "drew@example.com" });
+    // Use mixed-case email to assert sub is lowercased in the session JWT.
+    const token = await mintToken(key, { sub: "Drew@Example.com" });
     const { POST } = await loadRouteFresh();
 
     const res = await POST(buildRequest(token));
@@ -119,13 +122,58 @@ describe("POST /api/portal/handoff", () => {
     expect(body).toMatchObject({
       ok: true,
       redirect: "/app",
-      subject: "drew@example.com",
+      subject: "Drew@Example.com",
       customer_id: "cust-9",
       role: "internal",
     });
-    expect(res.headers.get("set-cookie") ?? "").toContain(
-      "lumen_demo_session",
-    );
+
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("lumen_demo_session");
+
+    // Cookie value must be a compact JWT (three dot-separated base64url parts).
+    const cookieValueMatch = setCookie.match(/lumen_demo_session=([^;]+)/);
+    expect(cookieValueMatch).not.toBeNull();
+    const cookieValue = cookieValueMatch![1];
+    expect(cookieValue).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+
+    // Round-trip: verify the JWT and assert sub is lowercased.
+    const { verifyLumenSession } = await import("@/lib/portal-session");
+    const payload = await verifyLumenSession(cookieValue);
+    expect(payload).not.toBeNull();
+    expect(payload?.sub).toBe("drew@example.com");
+  });
+
+  it("sets the Secure flag when NODE_ENV is production", async () => {
+    const savedNodeEnv = process.env.NODE_ENV;
+    (process.env as Record<string, string>).NODE_ENV = "production";
+
+    try {
+      const key = await makeKey("active-secure");
+      installJwksFetch([key.jwk]);
+      const token = await mintToken(key, { sub: "secure@example.com" });
+      const { POST } = await loadRouteFresh();
+
+      const res = await POST(buildRequest(token));
+      expect(res.status).toBe(200);
+      const setCookie = res.headers.get("set-cookie") ?? "";
+      expect(setCookie.toLowerCase()).toContain("secure");
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = savedNodeEnv;
+    }
+  });
+
+  it("returns 500 when SESSION_SECRET is missing", async () => {
+    delete process.env.SESSION_SECRET;
+    const key = await makeKey("active-no-secret");
+    installJwksFetch([key.jwk]);
+    const token = await mintToken(key, { sub: "user@example.com" });
+    const { POST } = await loadRouteFresh();
+
+    const res = await POST(buildRequest(token));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("misconfigured");
+    expect(body.detail).toMatch(/SESSION_SECRET/);
   });
 
   it("returns 401 with reason for a token signed by an unknown key", async () => {

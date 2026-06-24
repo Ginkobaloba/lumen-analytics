@@ -5,6 +5,10 @@ import {
   type PortalVerifyConfig,
   type VerifyResult,
 } from "@/lib/portal-jwks";
+import {
+  mintLumenSession,
+  lumenSessionCookieAttributes,
+} from "@/lib/portal-session";
 
 /**
  * Portal handoff (chunk 4b).
@@ -17,9 +21,9 @@ import {
  *   Content-Type: application/json
  *   { "token": "<JWT>" }
  *
- * On success we mint the existing demo session cookie (so the rest of the
- * app keeps working unchanged) and return 200 with the verified subject and
- * a path to redirect to. The client then navigates to /app.
+ * On success we mint a signed session JWT and stash it in an HttpOnly cookie,
+ * then return 200 with the verified subject and a path to redirect to. The
+ * client then navigates to /app.
  *
  * The cookie-only "/api/session" sign-in shortcut stays in place for now;
  * both paths converge on the same `lumen_demo_session` cookie.
@@ -27,9 +31,6 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const SESSION_COOKIE = "lumen_demo_session";
-const SESSION_TTL_SECONDS = 60 * 60; // 1h, matches portal JWT lifetime
 
 interface HandoffBody {
   token?: unknown;
@@ -58,6 +59,22 @@ export async function POST(request: NextRequest) {
     return jsonError(401, "unauthorized", result.reason);
   }
 
+  const customerId = result.payload.customer_id ?? null;
+  const role = result.payload.role ?? "customer";
+
+  let sessionToken: string;
+  let expiresAt: Date;
+  try {
+    ({ token: sessionToken, expiresAt } = await mintLumenSession({
+      email: result.payload.sub,
+      customerId,
+      role,
+    }));
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "session error";
+    return jsonError(500, "misconfigured", detail);
+  }
+
   const response = NextResponse.json(
     {
       ok: true,
@@ -68,33 +85,15 @@ export async function POST(request: NextRequest) {
     },
     { status: 200 },
   );
-  // The demo runs read-only, so the cookie just records that the user has
-  // claimed a valid portal token. We deliberately do not store the raw JWT.
-  const cookieValue = encodeCookieValue({
-    via: "portal",
-    sub: result.payload.sub,
-    kid: result.kid,
+
+  response.cookies.set({
+    ...lumenSessionCookieAttributes(expiresAt),
+    value: sessionToken,
   });
-  response.cookies.set(SESSION_COOKIE, cookieValue, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_TTL_SECONDS,
-  });
+
   return response;
 }
 
 function jsonError(status: number, error: string, detail: string) {
   return NextResponse.json({ ok: false, error, detail }, { status });
-}
-
-function encodeCookieValue(claims: {
-  via: string;
-  sub: string;
-  kid: string;
-}): string {
-  // Plain Base64URL JSON; the cookie is httpOnly and we trust it only for
-  // "user has signed in" state. No app authorization decisions key off it.
-  const json = JSON.stringify(claims);
-  return Buffer.from(json, "utf8").toString("base64url");
 }
