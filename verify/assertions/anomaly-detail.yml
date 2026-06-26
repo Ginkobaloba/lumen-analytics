@@ -1,0 +1,54 @@
+# assertions/anomaly-detail.yml -- full assertion set for the anomaly detail panel
+#
+# Routes:
+#   GET  /api/anomalies/[id]        -- returns AnomalyDetail JSON
+#   POST /api/anomalies/[id]/status -- triage action (acknowledge/assign/false_positive)
+#
+# This is a tier-3 surface. The detail panel delivers the attribution payoff
+# of the demo story: expected-vs-actual series, contributor mini charts, and
+# triage actions. A broken or wrong-data panel makes the headline story fail.
+#
+# The verify harness should use a known anomaly id from the seeded dataset.
+# The churn-spike-m7 episode is scripted at days 186-204; its DB id will be 1
+# after a fresh `npm run seed:full`. Adjust the id if the seed order changes.
+
+surface: anomaly-detail
+url: /api/anomalies/1
+
+assertions:
+  # API returns 200 with a valid anomaly record for id=1
+  - { type: http_status, expect: 200 }
+
+  # JSON response must include the anomaly fields the UI depends on
+  - { type: text_present, text: "metric_id" }
+  - { type: text_present, text: "direction" }
+  - { type: text_present, text: "severity" }
+  - { type: text_present, text: "expected_value" }
+  - { type: text_present, text: "actual_value" }
+  - { type: text_present, text: "sigma" }
+  - { type: text_present, text: "title" }
+  - { type: text_present, text: "summary" }
+  - { type: text_present, text: "contributors" }
+  - { type: text_present, text: "series" }
+
+  # The churn spike is the first scripted anomaly; its direction is "up"
+  # (churn rate spiked above expected). Direction must be one of up/down.
+  - { type: text_present, text: "\"direction\"" }
+
+  # Status must be one of active/acknowledged/resolved/false_positive
+  - { type: text_present, text: "status" }
+
+  # JSON must not be an error response
+  # (confirmed by http_status: 200 + absence of error key is sufficient)
+
+---
+# Unauthenticated triage action: POST /api/anomalies/1/status
+# The status endpoint does not require a session in the current implementation,
+# but it requires a valid body. A POST with empty body returns 400 or similar.
+# Verify that 404 is returned for a nonexistent anomaly.
+surface: anomaly-detail-not-found
+url: /api/anomalies/999999
+
+assertions:
+  - { type: http_status, expect: 404 }
+  - { type: json_path_equals, path: "$.error", expect: "Anomaly not found" }

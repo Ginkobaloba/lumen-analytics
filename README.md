@@ -55,3 +55,44 @@ for the attribution engine to find.
 ## Design decisions
 
 Logged at `docs/demos/lumen/decisions.md`.
+
+## Verification
+
+The `verify/` directory declares what "passing" means for this repo.
+See `verify/README.md` for the full convention.
+
+**Quick smoke (every PR):**
+
+```powershell
+# From the verify skill or CI:
+bash verify/ci/quick_smoke.sh verify/smoke.yml
+```
+
+Hits all surfaces in `verify/smoke.yml` -- home, app redirect, anomaly
+log redirect, anomaly API, team API, and session API. Curls only; no
+browser required. Skips `selector_present` and `axe_no_critical` (those
+need a browser and run locally).
+
+**Deep verify (tier-3 PRs, before merge):**
+
+```powershell
+# Run the full /verify deep pass locally with the verify skill,
+# then commit the report to verify/reports/ with "Overall: PASS".
+# CI enforces the report exists before allowing merge.
+bash verify/ci/deep_gate.sh
+```
+
+Tier-3 surfaces that require deep verify before merge:
+
+- `anomaly-detection-backend` -- the STL decomposition + episode detector
+  that generates all anomaly data (src/lib/ml/, scripts/detect.ts)
+- `anomaly-log` -- /app/anomalies, the primary anomaly story entry point
+- `anomaly-detail-panel` -- /api/anomalies/[id] + triage status endpoint
+- `demo-auth` -- /api/session, middleware, /api/portal/handoff
+
+**CI workflow:** `.github/workflows/verify.yml` runs quick-verify on every
+PR and deep-verify (report gate) on any PR labeled `tier-3`.
+
+**Surface assertions:** `verify/assertions/` holds the full deep-verify
+assertion sets per surface (home, anomaly-log, anomaly-detail).
+`verify/smoke.yml` holds the fast subset that runs on every PR.
