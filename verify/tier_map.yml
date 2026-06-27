@@ -1,0 +1,87 @@
+# tier_map.yml -- surface risk classification for lumen-analytics
+#
+# Tiers:
+#   3 -- high stakes; deep-verify REQUIRED before merge
+#   2 -- moderate stakes; smoke required, deep recommended
+#   1 -- low stakes; smoke-only sufficient
+#
+# The demo lives or dies on the anomaly story being coherent end to end.
+# Any regression in anomaly detection, attribution, or the drill-down panel
+# breaks the headline narrative that the demo is built to showcase.
+
+surfaces:
+  - name: anomaly-detection-backend
+    tier: 3
+    deep_verify_before_merge: true
+    reason: >
+      The scripted anomaly story (churn spike M7, expansion surge M9,
+      feature adoption drop M11) is the centerpiece of the demo. Changes
+      to src/lib/ml/detect.ts, src/lib/ml/decompose.ts,
+      src/lib/data/anomaly-windows.ts, or scripts/detect.ts can silently
+      break the episode grouping, sigma thresholds, or attribution ranking
+      that the entire UI narrative depends on. A broken detector means no
+      anomalies appear and the demo is dead on arrival.
+
+  - name: anomaly-log
+    tier: 3
+    deep_verify_before_merge: true
+    reason: >
+      /app/anomalies is the primary entry point for the anomaly story.
+      It renders the full anomaly table, deep-link focus, and opens the
+      drill-down panel. A regression here (empty table, broken filter,
+      non-opening panel) collapses the demo flow a visitor follows from
+      the landing page CTA.
+
+  - name: anomaly-detail-panel
+    tier: 3
+    deep_verify_before_merge: true
+    reason: >
+      The side panel (GET /api/anomalies/[id], POST /api/anomalies/[id]/status)
+      delivers the expected-vs-actual chart, contributor mini charts, and
+      triage actions. This is the attribution payoff of the anomaly story --
+      the moment that proves "Lumen tells you which segment moved." A broken
+      panel or wrong series data makes the story unconvincing.
+
+  - name: demo-auth
+    tier: 3
+    deep_verify_before_merge: true
+    reason: >
+      The AxlePoint cookie pattern (POST /api/session, middleware on /app/*,
+      portal handoff at /api/portal/handoff) gates the entire authenticated
+      demo workspace. A broken sign-in flow locks visitors out of the app
+      entirely. Session handling bugs that leak or fail silently are hard to
+      notice in smoke-only checks.
+
+  - name: executive-overview
+    tier: 2
+    deep_verify_before_merge: false
+    reason: >
+      /app is the first screen after sign-in. KPI cards and the revenue
+      trend chart with anomaly markers must render correctly. Moderate risk --
+      important for first impression but a data or layout bug here does not
+      completely kill the anomaly story, which lives at /app/anomalies.
+
+  - name: metrics-explorer
+    tier: 2
+    deep_verify_before_merge: false
+    reason: >
+      /app/metrics provides the catalog grid and metric detail with anomaly
+      markers linking into the panel. Secondary to the main anomaly log flow
+      but important for showing depth of the metric catalog (32 metrics).
+
+  - name: home
+    tier: 1
+    deep_verify_before_merge: false
+    reason: >
+      Marketing landing page. Server-rendered, no charts, no DB reads. Copy
+      and CTA button only. The sign-in form posts to /api/session (tier 3),
+      but the page itself is static -- a copy regression does not break the
+      demo story.
+
+  - name: team-api
+    tier: 1
+    deep_verify_before_merge: false
+    reason: >
+      GET /api/team returns the team member list used for anomaly assignment
+      dropdowns. Pure static data from catalog.ts; no DB read, no user-
+      visible narrative impact if briefly broken.

@@ -1,0 +1,47 @@
+# assertions/home.yml -- full assertion set for the home (landing) surface
+#
+# Runs during deep verify (/verify deep). Richer than the smoke.yml entry.
+# Includes browser-layer checks (no_console_errors, lcp_under_ms, axe_no_critical)
+# that are skipped in CI and covered by the local deep run.
+
+surface: home
+url: /
+
+assertions:
+  # Network layer
+  - { type: http_status, expect: 200 }
+  - { type: header_present, header: "Strict-Transport-Security" }
+
+  # Hero copy -- the h1 text is the brand positioning statement
+  - { type: text_present, text: "See changes in your business" }
+  - { type: text_present, text: "before they hit your P&L" }
+
+  # Primary CTA -- both occurrences share the same label
+  - { type: text_present, text: "Open the live demo" }
+
+  # "How it works" section headings
+  - { type: text_present, text: "Detect, attribute, act" }
+  - { type: text_present, text: "Built for the question behind the dashboard" }
+
+  # Logo strip microcaption (confirms fictional-customer disclaimer is present)
+  - { type: text_present, text: "Illustrative customers. All names fictional." }
+
+  # Footer attribution
+  - { type: text_present, text: "A demo product by Paradigm Coding Solutions" }
+
+  # DOM selectors (browser-layer: headless or headed)
+  # Sign-in form posts to /api/session
+  - { type: selector_present, selector: "form[action='/api/session']" }
+  # Hero h1
+  - { type: selector_present, selector: "h1" }
+  # Hero SVG anomaly visual
+  - { type: selector_present, selector: "svg[viewBox='0 0 480 180']" }
+  # Feature cards grid
+  - { type: selector_present, selector: "section h3" }
+  # Paradigm banner (present on all pages)
+  - { type: selector_present, selector: "[data-paradigm-banner], header, nav" }
+
+  # Performance and quality (local deep run only -- not in CI)
+  - { type: no_console_errors }
+  - { type: lcp_under_ms, expect: 2500 }
+  - { type: axe_no_critical }
