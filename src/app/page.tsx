@@ -8,8 +8,13 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
+import { cookies } from "next/headers";
 import ParadigmBanner from "@/components/paradigm-banner";
 import PortalTokenClaim from "@/components/portal-token-claim";
+
+// Matches middleware.ts SESSION_COOKIE; kept as a literal so this server
+// component does not pull the edge middleware module into its bundle.
+const SESSION_COOKIE = "lumen_demo_session";
 
 /*
   Chunk 2.12 marketing landing. Server-rendered, no chart libraries: the
@@ -170,6 +175,7 @@ export default function Home({
 }: {
   searchParams: { signin?: string };
 }) {
+  const signedIn = cookies().has(SESSION_COOKIE);
   return (
     <>
       <ParadigmBanner />
@@ -285,10 +291,16 @@ export default function Home({
             anomaly story: detection, attribution, and triage, end to end.
           </p>
           <SignInButton label="Open the live demo" />
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <UserCheck className="h-3.5 w-3.5" aria-hidden />
-            Signed in as a demo user. Nothing to configure.
-          </p>
+          {signedIn ? (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <UserCheck className="h-3.5 w-3.5" aria-hidden />
+              Signed in as a demo user. Nothing to configure.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No sign-up, no setup. One click opens a fully seeded workspace.
+            </p>
+          )}
         </section>
 
         {/* Footer */}
@@ -296,8 +308,16 @@ export default function Home({
           <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-8 sm:flex-row">
             <Wordmark />
             <p className="text-xs text-muted-foreground">
-              A demo product by Paradigm Coding Solutions. All data is
-              synthetic.
+              Built by{" "}
+              <a
+                href="https://paradigm.codes"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Paradigm Coding Solutions
+              </a>
+              . Demo product, all data is synthetic.
             </p>
           </div>
         </footer>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -42,11 +42,27 @@ const SEVERITY_ORDER = ["critical", "high", "medium", "low"] as const;
 
 export function AnomalyLog({ anomalies }: { anomalies: AnomalyListItem[] }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [selected, setSelected] = useState<string | null>(
     searchParams.get("focus"),
   );
   const [status, setStatus] = useState<string>("all");
   const [severity, setSeverity] = useState<string>("all");
+
+  // Keep the open anomaly in the URL (?focus=<id>) so a drill-in is
+  // shareable and survives a reload, and clears cleanly on close.
+  const select = useCallback(
+    (id: string | null) => {
+      setSelected(id);
+      const params = new URLSearchParams(searchParams.toString());
+      if (id) params.set("focus", id);
+      else params.delete("focus");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   const filtered = useMemo(
     () =>
@@ -125,11 +141,11 @@ export function AnomalyLog({ anomalies }: { anomalies: AnomalyListItem[] }) {
                   key={a.id}
                   className="cursor-pointer"
                   tabIndex={0}
-                  onClick={() => setSelected(a.id)}
+                  onClick={() => select(a.id)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      setSelected(a.id);
+                      select(a.id);
                     }
                   }}
                 >
@@ -173,7 +189,7 @@ export function AnomalyLog({ anomalies }: { anomalies: AnomalyListItem[] }) {
         </Table>
       </div>
 
-      <AnomalyPanel anomalyId={selected} onClose={() => setSelected(null)} />
+      <AnomalyPanel anomalyId={selected} onClose={() => select(null)} />
     </div>
   );
 }

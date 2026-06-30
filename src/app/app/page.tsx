@@ -7,14 +7,14 @@ import { getOverviewData } from "@/lib/queries";
 // so build-time prerendering is off for app routes.
 export const dynamic = "force-dynamic";
 
-function LiveBadge() {
+function SnapshotBadge({ asOf }: { asOf: string }) {
   return (
     <span className="flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
-      <span className="relative flex h-2 w-2" aria-hidden>
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-green opacity-60 motion-reduce:animate-none" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-green" />
-      </span>
-      Live data
+      <span
+        className="inline-block h-2 w-2 rounded-full bg-muted-foreground/60"
+        aria-hidden
+      />
+      Demo snapshot, {formatDateLong(asOf)}
     </span>
   );
 }
@@ -34,7 +34,7 @@ export default function OverviewPage() {
             Trailing 12 months through {formatDateLong(asOf)}
           </p>
         </div>
-        <LiveBadge />
+        <SnapshotBadge asOf={asOf} />
       </div>
 
       <section
