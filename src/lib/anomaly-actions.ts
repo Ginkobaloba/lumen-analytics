@@ -19,6 +19,7 @@ export interface ActionResult {
   status?: string;
   assigned_to?: string | null;
   assignee_name?: string | null;
+  updated_at?: string;
 }
 
 export function applyAnomalyAction(id: string, input: AnomalyAction): ActionResult {
@@ -49,14 +50,16 @@ export function applyAnomalyAction(id: string, input: AnomalyAction): ActionResu
       return { ok: false, error: "Unknown action" };
   }
 
+  const updatedAt = new Date().toISOString();
   db.prepare(
     "UPDATE anomalies SET status = ?, assigned_to = ?, updated_at = ? WHERE id = ?",
-  ).run(status, assignedTo, new Date().toISOString(), id);
+  ).run(status, assignedTo, updatedAt, id);
 
   return {
     ok: true,
     status,
     assigned_to: assignedTo,
     assignee_name: TEAM.find((u) => u.id === assignedTo)?.name ?? null,
+    updated_at: updatedAt,
   };
 }
