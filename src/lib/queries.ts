@@ -99,6 +99,21 @@ export function getAllAnomalies(): AnomalyListItem[] {
   }));
 }
 
+/** The single most severe anomaly, for the integrations "send test alert"
+    action and any single-anomaly demo entry point. */
+export function getTopAnomalyId(): string | null {
+  const db = openDb();
+  const row = db
+    .prepare(
+      `SELECT id FROM anomalies
+       ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                              WHEN 'medium' THEN 2 ELSE 3 END, sigma DESC
+       LIMIT 1`,
+    )
+    .get() as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
 export function getRecentAnomalies(limit = 8): AnomalyListItem[] {
   const db = openDb();
   const rows = db

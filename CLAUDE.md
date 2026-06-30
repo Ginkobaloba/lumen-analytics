@@ -46,6 +46,13 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
   window: `cloudflare-config\scripts\deploy-demo.ps1 -Name
   lumenanalytics -ContextPath C:\dev\lumen-analytics -InternalPort 3000
   -VerifyContent "Lumen"`.
+- 2.14 must-have polish: DONE (anomaly -> segment -> account drill-through,
+  functional Slack webhook alerting, visible triage persistence). The
+  anomaly panel resolves contributing slices to the real account list
+  (`src/lib/affected-accounts.ts`); /app/customers takes deep-link filters
+  (tier/geo/industry/status/q + `anomaly` banner); `POST /api/alerts/slack`
+  forwards a Block Kit payload to LUMEN_SLACK_WEBHOOK_URL (live when set,
+  payload-returning no-op when not). updated_at is surfaced in the panel.
 - Remaining: 2.13 Work page entry, requested from the paradigm-site
   copy session (their PR #31/#33 pattern) via the running handoff.
 
@@ -77,5 +84,8 @@ npm run build
 - Design decisions: `docs/demos/lumen/decisions.md`
 - Metric catalog: `src/lib/data/catalog.ts`
 - Scripted anomalies: `src/lib/data/anomaly-windows.ts`
+- Anomaly -> account drill-through: `src/lib/affected-accounts.ts`
+- Slack alerting: `src/lib/alerting.ts`, `src/app/api/alerts/slack/route.ts`
+  (set `LUMEN_SLACK_WEBHOOK_URL` to deliver; see `.env.example`)
 - Seed: `scripts/seed.ts` (seed 20260610, `npm run seed`)
 - Paradigm palette source: `C:\dev\PARADIGM_PLAN.md` Section 3
