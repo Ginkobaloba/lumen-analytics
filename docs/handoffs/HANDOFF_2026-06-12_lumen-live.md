@@ -4,7 +4,7 @@
 
 - Shipped eight squash-merged PRs (#5-#12), main @ df98cd3, 46 tests
   green and a clean production build at every step, then deployed.
-  **https://lumenanalytics.projectnexuscode.org is LIVE** (DREWSPC only,
+  **https://lumenanalytics.projectnexuscode.org is LIVE** (<HOST> only,
   BROOKFIELD skipped on the known ssh icacls blocker).
 - **2.4 metrics explorer (PR #5):** /app/metrics renders all 32 catalog
   metrics grouped by category with sparklines, deltas, anomaly-count
