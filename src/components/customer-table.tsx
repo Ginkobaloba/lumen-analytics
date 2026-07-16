@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { GEOGRAPHIES, PLAN_TIERS } from "@/lib/data/catalog";
+import { GEOGRAPHIES, INDUSTRIES, PLAN_TIERS } from "@/lib/data/catalog";
 import { cn } from "@/lib/utils";
 import { formatDateShort, formatMetricValue } from "@/lib/format";
 import type { CustomerListItem } from "@/lib/queries";
@@ -46,17 +46,49 @@ function riskClass(risk: number): string {
   return "text-metric-good";
 }
 
+/** Read a query param only if it is a member of the allowed set, else
+    fall back to "all". Keeps a hand-edited URL from emptying the table. */
+function paramIn(
+  params: URLSearchParams,
+  key: string,
+  allowed: readonly string[],
+): string {
+  const v = params.get(key);
+  return v && allowed.includes(v) ? v : "all";
+}
+
 export function CustomerTable({ customers }: { customers: CustomerListItem[] }) {
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [tier, setTier] = useState<string>("all");
-  const [geo, setGeo] = useState<string>("all");
-  const [status, setStatus] = useState<string>("all");
+  const searchParams = useSearchParams();
+  // Deep links from the anomaly drill-down land here with the affected
+  // segment pre-applied (tier, geo, industry) plus an `anomaly` marker.
+  const fromAnomaly = searchParams.get("anomaly");
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+  const [tier, setTier] = useState<string>(() => paramIn(searchParams, "tier", PLAN_TIERS));
+  const [geo, setGeo] = useState<string>(() => paramIn(searchParams, "geo", GEOGRAPHIES));
+  const [industry, setIndustry] = useState<string>(() =>
+    paramIn(searchParams, "industry", INDUSTRIES),
+  );
+  const [status, setStatus] = useState<string>(() =>
+    paramIn(searchParams, "status", ["active", "churned"]),
+  );
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({
     key: "mrr",
     dir: -1,
   });
   const [page, setPage] = useState(0);
+
+  const segmentChips = [tier, geo, industry].filter((v) => v !== "all");
+
+  const clearFilters = () => {
+    setQuery("");
+    setTier("all");
+    setGeo("all");
+    setIndustry("all");
+    setStatus("all");
+    setPage(0);
+    router.replace("/app/customers");
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -67,6 +99,7 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
           c.domain.toLowerCase().includes(q)) &&
         (tier === "all" || c.plan_tier === tier) &&
         (geo === "all" || c.geography === geo) &&
+        (industry === "all" || c.industry === industry) &&
         (status === "all" || c.status === status),
     );
     rows.sort((a, b) => {
@@ -79,7 +112,7 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
       return cmp !== 0 ? cmp * sort.dir : a.name.localeCompare(b.name);
     });
     return rows;
-  }, [customers, query, tier, geo, status, sort]);
+  }, [customers, query, tier, geo, industry, status, sort]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const clampedPage = Math.min(page, pageCount - 1);
@@ -102,6 +135,34 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
 
   return (
     <div className="space-y-4">
+      {fromAnomaly && segmentChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-pine/30 bg-brand-pine/5 px-3 py-2.5 text-sm">
+          <Sparkles className="h-4 w-4 shrink-0 text-brand-forest" aria-hidden />
+          <span className="text-foreground">
+            Accounts behind a detected anomaly
+          </span>
+          <span className="flex flex-wrap gap-1.5">
+            {segmentChips.map((chip) => (
+              <Badge key={chip} variant="outline" className="bg-card">
+                {chip}
+              </Badge>
+            ))}
+          </span>
+          <span className="text-muted-foreground">
+            &middot; {filtered.length} account{filtered.length === 1 ? "" : "s"}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7"
+            onClick={clearFilters}
+          >
+            <X className="mr-1 h-3.5 w-3.5" aria-hidden />
+            Clear
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <Input
           value={query}
@@ -135,6 +196,19 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
             {GEOGRAPHIES.map((g) => (
               <SelectItem key={g} value={g}>
                 {g}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={industry} onValueChange={applyFilter(setIndustry)}>
+          <SelectTrigger className="h-9 w-36 text-sm" aria-label="Filter by industry">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All industries</SelectItem>
+            {INDUSTRIES.map((ind) => (
+              <SelectItem key={ind} value={ind}>
+                {ind}
               </SelectItem>
             ))}
           </SelectContent>

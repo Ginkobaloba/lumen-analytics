@@ -1,4 +1,5 @@
 import "server-only";
+import { getAffectedAccounts, type AffectedAccounts } from "./affected-accounts";
 import { METRIC_BY_ID, type MetricDef } from "./data/catalog";
 import { dayOfWeek } from "./data/dates";
 import { openDb } from "./db";
@@ -43,8 +44,11 @@ export interface AnomalyDetail {
   suggested_actions: string[];
   assigned_to: string | null;
   assignee_name: string | null;
+  updated_at: string;
   series: ExpectedVsActualSeries;
   contributors: ContributorDetail[];
+  /** Real accounts behind the contributing slices; null when broad-based. */
+  affected: AffectedAccounts | null;
 }
 
 interface SeriesRow {
@@ -89,7 +93,10 @@ export function getAnomalyDetail(id: string): AnomalyDetail | null {
        WHERE a.id = ?`,
     )
     .get(id) as
-    | (Omit<AnomalyDetail, "metric" | "series" | "contributors" | "suggested_actions"> & {
+    | (Omit<
+        AnomalyDetail,
+        "metric" | "series" | "contributors" | "suggested_actions" | "affected"
+      > & {
         metric_id: string;
         attribution: string;
         suggested_actions: string;
@@ -144,7 +151,9 @@ export function getAnomalyDetail(id: string): AnomalyDetail | null {
     suggested_actions: JSON.parse(row.suggested_actions) as string[],
     assigned_to: row.assigned_to,
     assignee_name: row.assignee_name,
+    updated_at: row.updated_at,
     series: expectedVsActual(topRows, row.date, windowEnd),
     contributors,
+    affected: getAffectedAccounts(db, contributors, row.id),
   };
 }

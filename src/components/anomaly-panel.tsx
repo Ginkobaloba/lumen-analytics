@@ -1,10 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDownRight, ArrowUpRight, Check, Loader2 } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  Loader2,
+  Send,
+  Users,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -52,6 +61,33 @@ interface TeamMember {
   role: string;
 }
 
+interface SlackAlertState {
+  configured: boolean;
+  delivered: boolean;
+  status: number | null;
+  target: string | null;
+  error?: string;
+}
+
+/** Brand severity ramp for churn risk, matching the customers table. */
+function riskClass(risk: number): string {
+  if (risk >= 0.66) return "text-anomaly-high-text";
+  if (risk >= 0.33) return "text-anomaly-moderate-text";
+  return "text-metric-good";
+}
+
+/** Relative time for the persisted updated_at stamp. */
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "just now";
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}
+
 export function AnomalyPanel({
   anomalyId,
   onClose,
@@ -63,10 +99,12 @@ export function AnomalyPanel({
   const [detail, setDetail] = useState<AnomalyDetail | null>(null);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [pending, setPending] = useState<string | null>(null);
+  const [alert, setAlert] = useState<SlackAlertState | null>(null);
 
   useEffect(() => {
     if (!anomalyId) return;
     setDetail(null);
+    setAlert(null);
     let cancelled = false;
     fetch(`/api/anomalies/${anomalyId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
@@ -106,9 +144,29 @@ export function AnomalyPanel({
           status: updated.status,
           assigned_to: updated.assigned_to,
           assignee_name: updated.assignee_name,
+          updated_at: updated.updated_at ?? detail.updated_at,
         });
         router.refresh();
       }
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const sendToSlack = async () => {
+    if (!detail) return;
+    setPending("slack");
+    setAlert(null);
+    try {
+      const r = await fetch("/api/alerts/slack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anomalyId: detail.id }),
+      });
+      if (r.ok) setAlert((await r.json()) as SlackAlertState);
+      else setAlert({ configured: false, delivered: false, status: r.status, target: null, error: `Request failed (${r.status})` });
+    } catch {
+      setAlert({ configured: false, delivered: false, status: null, target: null, error: "Network error" });
     } finally {
       setPending(null);
     }
@@ -141,6 +199,11 @@ export function AnomalyPanel({
                 {detail.assignee_name && (
                   <span className="text-xs text-muted-foreground">
                     Assigned to {detail.assignee_name}
+                  </span>
+                )}
+                {detail.updated_at && (
+                  <span className="text-xs text-muted-foreground">
+                    &middot; updated {relativeTime(detail.updated_at)}
                   </span>
                 )}
               </div>
@@ -220,6 +283,75 @@ export function AnomalyPanel({
                 )}
               </section>
 
+              {detail.affected && detail.affected.count > 0 && (
+                <>
+                  <Separator />
+                  <section>
+                    <div className="mb-1 flex items-center gap-2">
+                      <Users className="h-4 w-4 text-muted-foreground" aria-hidden />
+                      <h3 className="text-sm font-medium">Affected accounts</h3>
+                      <Badge variant="outline" className="ml-auto font-normal">
+                        {detail.affected.label}
+                      </Badge>
+                    </div>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      {detail.affected.count} account
+                      {detail.affected.count === 1 ? "" : "s"} in this segment
+                      {detail.affected.churnedCount > 0
+                        ? ` · ${detail.affected.churnedCount} already churned`
+                        : ""}
+                      . The customers behind this spike.
+                    </p>
+                    <ul className="space-y-1.5">
+                      {detail.affected.preview.map((acct) => (
+                        <li key={acct.id}>
+                          <Link
+                            href={`/app/customers/${acct.id}`}
+                            className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 transition-colors hover:bg-accent/60"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium">
+                                {acct.name}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {acct.plan_tier} &middot; {acct.geography} &middot; {acct.industry}
+                              </span>
+                            </span>
+                            {acct.status === "churned" ? (
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 border-transparent bg-anomaly-high/15 text-anomaly-high-text"
+                              >
+                                Churned
+                              </Badge>
+                            ) : (
+                              <span
+                                className={cn(
+                                  "shrink-0 font-mono text-xs",
+                                  riskClass(acct.churn_risk),
+                                )}
+                              >
+                                {Math.round(acct.churn_risk * 100)}% risk
+                              </span>
+                            )}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                    <Link
+                      href={detail.affected.customersHref}
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "sm" }),
+                        "mt-3 w-full",
+                      )}
+                    >
+                      View all {detail.affected.count} accounts in Customers
+                      <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
+                    </Link>
+                  </section>
+                </>
+              )}
+
               <Separator />
 
               <section>
@@ -276,6 +408,46 @@ export function AnomalyPanel({
                     )}
                     Mark as false positive
                   </Button>
+                </div>
+
+                <div className="space-y-2 rounded-md border border-dashed p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium">Route to Slack</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending !== null}
+                      onClick={sendToSlack}
+                    >
+                      {pending === "slack" ? (
+                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <Send className="mr-1 h-3.5 w-3.5" aria-hidden />
+                      )}
+                      Send to Slack
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    POSTs a Block Kit alert to your #revenue-alerts webhook.
+                  </p>
+                  {alert && (
+                    <p
+                      className={cn(
+                        "text-xs",
+                        alert.delivered
+                          ? "text-metric-good"
+                          : alert.configured
+                            ? "text-anomaly-high-text"
+                            : "text-anomaly-moderate-text",
+                      )}
+                    >
+                      {alert.delivered
+                        ? `Delivered to ${alert.target ?? "Slack"} (HTTP ${alert.status}).`
+                        : alert.configured
+                          ? `Webhook error: ${alert.error ?? `HTTP ${alert.status}`}.`
+                          : "No webhook configured (set LUMEN_SLACK_WEBHOOK_URL). Payload built and ready to send."}
+                    </p>
+                  )}
                 </div>
               </section>
             </div>

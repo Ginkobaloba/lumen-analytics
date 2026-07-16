@@ -4,7 +4,6 @@ import {
   Bell,
   CreditCard,
   Database,
-  MessageSquare,
   Briefcase,
   Cloud,
   Webhook,
@@ -12,6 +11,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { IntegrationsSlackCard } from "@/components/integrations-slack-card";
+import { isSlackConfigured } from "@/lib/alerting";
+import { getTopAnomalyId } from "@/lib/queries";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Integrations",
@@ -48,7 +52,6 @@ const INTEGRATIONS: {
   {
     category: "Alerting and workflow",
     items: [
-      { name: "Slack", description: "Anomaly alerts to #revenue-alerts with severity routing.", icon: MessageSquare, status: "connected", detail: "3 channels · severity high and up" },
       { name: "PagerDuty", description: "Page the on-call analyst for critical anomalies.", icon: Bell, status: "available" },
       { name: "Webhooks", description: "POST anomaly and metric events to any endpoint.", icon: Webhook, status: "available" },
     ],
@@ -56,9 +59,11 @@ const INTEGRATIONS: {
 ];
 
 export default function IntegrationsPage() {
-  const connected = INTEGRATIONS.flatMap((g) => g.items).filter(
-    (i) => i.status === "connected",
-  ).length;
+  const slackConfigured = isSlackConfigured();
+  const topAnomalyId = getTopAnomalyId();
+  const connected =
+    INTEGRATIONS.flatMap((g) => g.items).filter((i) => i.status === "connected")
+      .length + (slackConfigured ? 1 : 0);
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
@@ -66,7 +71,8 @@ export default function IntegrationsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Integrations</h1>
         <p className="text-sm text-muted-foreground">
           {connected} connected. Data sources feed the metric catalog; alerting
-          destinations receive anomaly events.
+          destinations receive anomaly events. Slack alerting is live -- send a
+          test alert to see the payload land.
         </p>
       </div>
 
@@ -76,6 +82,12 @@ export default function IntegrationsPage() {
             {group.category}
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {group.category === "Alerting and workflow" && (
+              <IntegrationsSlackCard
+                configured={slackConfigured}
+                anomalyId={topAnomalyId}
+              />
+            )}
             {group.items.map((item) => (
               <Card key={item.name} className="shadow-sm">
                 <CardHeader className="pb-2">
@@ -110,8 +122,8 @@ export default function IntegrationsPage() {
       ))}
 
       <p className="text-xs text-muted-foreground">
-        Connections are illustrative; this demo workspace runs on a seeded
-        dataset.
+        Slack alerting is a live webhook; the remaining connections are
+        illustrative. This demo workspace runs on a seeded dataset.
       </p>
     </div>
   );

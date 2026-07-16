@@ -89,13 +89,28 @@ describe("anomaly detail + actions", () => {
       expect(c.series.expected.length).toBe(c.series.actual.length);
     }
     expect(d!.suggested_actions.length).toBeGreaterThanOrEqual(1);
+
+    // Persisted workflow timestamp is surfaced for the panel.
+    expect(typeof d!.updated_at).toBe("string");
+    expect(d!.updated_at.length).toBeGreaterThan(0);
+
+    // Affected accounts resolve the contributing slices to real customers.
+    expect(d!.affected).not.toBeNull();
+    expect(d!.affected!.filter).toMatchObject({ plan_tier: "Starter", geography: "EMEA" });
+    expect(d!.affected!.count).toBeGreaterThan(0);
+    expect(d!.affected!.preview.length).toBeGreaterThan(0);
+    expect(d!.affected!.customersHref).toContain("anomaly=");
   });
 
   it("applies acknowledge, assign, and false positive transitions", () => {
-    expect(applyAnomalyAction(churnId, { action: "acknowledge" })).toMatchObject({
-      ok: true,
-      status: "acknowledged",
-    });
+    const ack = applyAnomalyAction(churnId, { action: "acknowledge" });
+    expect(ack).toMatchObject({ ok: true, status: "acknowledged" });
+    expect(ack.updated_at).toBeDefined();
+
+    // Persistence: a fresh read reflects the acknowledged state and stamp.
+    const reread = getAnomalyDetail(churnId);
+    expect(reread!.status).toBe("acknowledged");
+    expect(reread!.updated_at).toBe(ack.updated_at);
 
     const assigned = applyAnomalyAction(churnId, { action: "assign", userId: "u-priya" });
     expect(assigned).toMatchObject({
