@@ -35,6 +35,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# MCP server build output
+/mcp/dist/
+
 # seeded demo database (build artifact)
 /data/
 
