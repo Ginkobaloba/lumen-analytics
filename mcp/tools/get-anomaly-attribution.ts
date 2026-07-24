@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { defineTool } from "../types";
 import { ResponseFormat, responseFormatField, ok, fail, json } from "../format";
-import { getAnomalyAttribution, type AnomalyAttribution } from "../data";
+import { getAnomalyAttribution, METRIC_BY_ID, type AnomalyAttribution } from "../data";
 
 const inputSchema = {
   anomaly_id: z
@@ -70,13 +70,25 @@ function toMarkdown(a: AnomalyAttribution): string {
   ];
 
   if (contributors.length === 0) {
-    lines.push(
-      "## Cause attribution",
-      "",
-      "No single segment dominates: this episode is broad-based across plan " +
-        "tiers, geographies, and industries rather than concentrated in one slice.",
-      "",
-    );
+    lines.push("## Cause attribution", "");
+    // Distinguish "no dominant slice" (a sliced metric that is genuinely
+    // broad-based) from "never segmented" (a top-level-only metric). The old
+    // wording asserted a per-segment conclusion for metrics that are never
+    // sliced at all.
+    const sliced = METRIC_BY_ID[anomaly.metric_id]?.sliced ?? false;
+    if (sliced) {
+      lines.push(
+        "No single segment dominates: this episode is broad-based across plan " +
+          "tiers, geographies, and industries rather than concentrated in one slice.",
+        "",
+      );
+    } else {
+      lines.push(
+        "This metric is tracked only at the top level and is not broken out by " +
+          "plan tier, geography, or industry, so no per-segment attribution is available.",
+        "",
+      );
+    }
   } else {
     lines.push(
       "## Top contributing segments",
@@ -128,7 +140,7 @@ Returns structured content:
       "expected_value": number, "actual_value": number, "sigma": number,
       "title": string, "summary": string, "assignee_name": string|null
     },
-    "contributors": [        // ranked, most responsible first; empty if broad-based
+    "contributors": [        // the genuine drivers (mean |z| >= 1.5, top 3), most responsible first; empty if broad-based or the metric is not segmented
       {
         "dimension": string,          // "plan_tier" | "geography" | "industry"
         "value": string,              // e.g. "Starter", "EMEA", "Software"
@@ -146,7 +158,7 @@ Examples:
 
 Error handling:
   - Returns an error naming the tool to use if the id is unknown.
-  - An empty "contributors" list means the anomaly is broad-based, not an error.`,
+  - An empty "contributors" list is not an error: it means either the anomaly is broad-based (a sliceable metric with no dominant segment) or the metric is tracked only at the top level and is not segmented.`,
   inputSchema,
   outputSchema,
   annotations: {
@@ -168,6 +180,10 @@ Error handling:
       args.response_format === ResponseFormat.JSON
         ? json(attribution)
         : toMarkdown(attribution);
-    return ok(text, attribution as unknown as Record<string, unknown>);
+    return ok(
+      text,
+      attribution as unknown as Record<string, unknown>,
+      args.response_format,
+    );
   },
 });

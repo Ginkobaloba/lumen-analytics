@@ -122,6 +122,6 @@ Error handling:
       args.response_format === ResponseFormat.JSON
         ? json(payload)
         : toMarkdown(args.query, metrics);
-    return ok(text, payload);
+    return ok(text, payload, args.response_format);
   },
 });

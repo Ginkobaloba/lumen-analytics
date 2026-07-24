@@ -33,16 +33,35 @@ export const responseFormatField = {
 
 /** Build a successful tool result. `text` is the human/markdown or json string;
     `structured` is the machine payload echoed in `structuredContent`. */
-export function ok(text: string, structured: Record<string, unknown>): {
+export function ok(
+  text: string,
+  structured: Record<string, unknown>,
+  format: ResponseFormat = ResponseFormat.MARKDOWN,
+): {
   content: { type: "text"; text: string }[];
   structuredContent: Record<string, unknown>;
 } {
-  const capped =
-    text.length > CHARACTER_LIMIT
-      ? text.slice(0, CHARACTER_LIMIT) +
-        `\n\n[...truncated at ${CHARACTER_LIMIT} characters. Narrow the query or ` +
-        `use a smaller limit / the offset parameter to page through results.]`
-      : text;
+  let capped = text;
+  if (text.length > CHARACTER_LIMIT) {
+    if (format === ResponseFormat.JSON) {
+      // Never emit a sliced (and therefore unparseable) JSON blob. Replace the
+      // whole text with a valid JSON stand-in that points at the untruncated
+      // structuredContent, which is always sent in full.
+      capped = json({
+        truncated: true,
+        character_limit: CHARACTER_LIMIT,
+        note:
+          "The full result exceeds the text character limit. Read structuredContent " +
+          "for the complete, untruncated payload, or narrow the query / page with " +
+          "the offset parameter.",
+      });
+    } else {
+      capped =
+        text.slice(0, CHARACTER_LIMIT) +
+        `\n\n[...truncated at ${CHARACTER_LIMIT} characters. The complete, ` +
+        `untruncated result is available in structuredContent.]`;
+    }
+  }
   return {
     content: [{ type: "text", text: capped }],
     structuredContent: structured,
