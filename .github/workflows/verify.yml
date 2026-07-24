@@ -38,24 +38,10 @@ jobs:
       - name: Run quick smoke against verify/smoke.yml
         run: bash verify/ci/quick_smoke.sh verify/smoke.yml
 
-  mcp-typecheck:
-    name: MCP server typecheck (all PRs)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Typecheck the MCP server
-        run: npm run mcp:typecheck
+  # NOTE: the mcp/ server is typechecked by the local `npm run verify` battery
+  # (which chains `mcp:typecheck`), not in CI. A CI job would need `npm ci`,
+  # which fails here with 401 fetching the private @paradigm-codes/* scope from
+  # GitHub Packages (no cross-org read:packages token is available in Actions).
 
   deep-verify:
     name: Deep Verify (tier-3 PRs only)
