@@ -38,6 +38,11 @@ jobs:
       - name: Run quick smoke against verify/smoke.yml
         run: bash verify/ci/quick_smoke.sh verify/smoke.yml
 
+  # NOTE: the mcp/ server is typechecked by the local `npm run verify` battery
+  # (which chains `mcp:typecheck`), not in CI. A CI job would need `npm ci`,
+  # which fails here with 401 fetching the private @paradigm-codes/* scope from
+  # GitHub Packages (no cross-org read:packages token is available in Actions).
+
   deep-verify:
     name: Deep Verify (tier-3 PRs only)
     runs-on: ubuntu-latest

@@ -79,6 +79,12 @@ const outputSchema = {
 
 function toMarkdown(rows: AnomalyRow[], total: number, offset: number): string {
   if (rows.length === 0) {
+    // Distinguish paging past the end (matches exist, just none on this page)
+    // from a genuine no-match, so a model reading the default text channel does
+    // not conclude there are no anomalies.
+    if (total > 0) {
+      return `No anomalies on this page (offset ${offset} of ${total} total). Use a smaller offset to see results.`;
+    }
     return "No anomalies match those filters.";
   }
   const lines = [
@@ -184,6 +190,6 @@ Error handling:
       args.response_format === ResponseFormat.JSON
         ? json(payload)
         : toMarkdown(rows, total, args.offset);
-    return ok(text, payload);
+    return ok(text, payload, args.response_format);
   },
 });

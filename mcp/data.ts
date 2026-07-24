@@ -25,9 +25,28 @@ import {
 export { METRICS, METRIC_BY_ID };
 export type { MetricDef };
 
-// __dirname at runtime: <repo>/mcp/dist/mcp. The seeded database lives at the
-// repository root under data/. Resolve up three levels to the repo root.
-const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
+// Resolve the repository root by walking up from this module's directory to the
+// first ancestor that looks like the repo root. This is layout-independent, so
+// it works whether the code runs compiled (mcp/dist/mcp/data.js) or straight
+// from source via tsx (mcp/data.ts), and regardless of the client's working
+// directory. `data/` appears once the DB is seeded; `next.config.mjs` marks the
+// repo root before then (and is never present under mcp/).
+function findRepoRoot(start: string): string {
+  let dir = start;
+  for (;;) {
+    if (
+      fs.existsSync(path.join(dir, "data")) ||
+      fs.existsSync(path.join(dir, "next.config.mjs"))
+    ) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return start; // reached the filesystem root; give up
+    dir = parent;
+  }
+}
+
+const REPO_ROOT = findRepoRoot(__dirname);
 export const DEFAULT_DB_PATH = path.join(REPO_ROOT, "data", "lumen.db");
 
 let cached: Database.Database | null = null;
@@ -155,7 +174,9 @@ const SEVERITY_RANK_SQL = `CASE a.severity
   WHEN 'critical' THEN 0 WHEN 'high' THEN 1
   WHEN 'medium' THEN 2 ELSE 3 END`;
 
-function resolveMetricName(row: AnomalyRow): AnomalyRow {
+// The anomalies table stores metric_id but no metric_name; the display name is
+// resolved from the catalog here so it is always in sync with the app.
+function resolveMetricName(row: Omit<AnomalyRow, "metric_name">): AnomalyRow {
   return {
     ...row,
     metric_name: METRIC_BY_ID[row.metric_id]?.name ?? row.metric_id,
@@ -190,7 +211,7 @@ export function listAnomalies(filters: AnomalyFilters): AnomalyPage {
 
   const rows = db
     .prepare(
-      `SELECT a.id, a.metric_id, a.metric_id AS metric_name, a.date, a.end_date,
+      `SELECT a.id, a.metric_id, a.date, a.end_date,
               a.direction, a.severity, a.status, a.expected_value, a.actual_value,
               a.sigma, a.title, a.summary, u.name AS assignee_name
        FROM anomalies a
@@ -199,7 +220,10 @@ export function listAnomalies(filters: AnomalyFilters): AnomalyPage {
        ORDER BY a.date DESC, ${SEVERITY_RANK_SQL}, a.sigma DESC
        LIMIT @limit OFFSET @offset`,
     )
-    .all({ ...params, limit: filters.limit, offset: filters.offset }) as AnomalyRow[];
+    .all({ ...params, limit: filters.limit, offset: filters.offset }) as Omit<
+    AnomalyRow,
+    "metric_name"
+  >[];
 
   return { total, rows: rows.map(resolveMetricName) };
 }
@@ -230,6 +254,28 @@ interface RawAttribution {
   contributionShare: number | null;
 }
 
+// The app presents an anomaly's drivers, not every slice: same direction as the
+// episode and clearly anomalous on their own terms (mean |z| >= this floor),
+// capped at the top few. Kept identical to src/lib/ml/attribute.ts topContributors
+// so the MCP surface tells the same story as the UI.
+const DRIVER_MIN_ABS_Z = 1.5;
+const MAX_CONTRIBUTORS = 3;
+
+/** Parse a JSON column into T, converting a malformed value into an actionable
+    error rather than a raw SyntaxError. Only reachable if LUMEN_DB_PATH points
+    at a database that is not a valid Lumen build artifact. */
+function parseJsonColumn<T>(raw: string, column: string, id: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error(
+      `Anomaly '${id}' has malformed JSON in the '${column}' column. The database ` +
+        `at LUMEN_DB_PATH is not a valid Lumen build artifact; regenerate it with ` +
+        `\`npm run seed:full\`.`,
+    );
+  }
+}
+
 /** Full attribution payload for a single anomaly id, or null if unknown. The
     ranked contributing slices are stored on the anomaly row as JSON by the
     detector (`scripts/detect.ts`); this reads them back, it does not recompute. */
@@ -237,7 +283,7 @@ export function getAnomalyAttribution(id: string): AnomalyAttribution | null {
   const db = openReadOnlyDb();
   const row = db
     .prepare(
-      `SELECT a.id, a.metric_id, a.metric_id AS metric_name, a.date, a.end_date,
+      `SELECT a.id, a.metric_id, a.date, a.end_date,
               a.direction, a.severity, a.status, a.expected_value, a.actual_value,
               a.sigma, a.title, a.summary, a.attribution, a.suggested_actions,
               u.name AS assignee_name
@@ -246,23 +292,43 @@ export function getAnomalyAttribution(id: string): AnomalyAttribution | null {
        WHERE a.id = @id`,
     )
     .get({ id }) as
-    | (AnomalyRow & { attribution: string; suggested_actions: string })
+    | (Omit<AnomalyRow, "metric_name"> & {
+        attribution: string;
+        suggested_actions: string;
+      })
     | undefined;
   if (!row) return null;
 
   const { attribution, suggested_actions, ...anomaly } = row;
-  const raw = JSON.parse(attribution) as RawAttribution[];
-  const contributors: Contributor[] = raw.map((a) => ({
-    dimension: a.dimension,
-    value: a.value,
-    mean_z: a.meanZ,
-    lift: a.lift,
-    contribution_share: a.contributionShare,
-  }));
+
+  // The stored attribution is the full ranked slice list. Present only the
+  // genuine drivers (same-direction, mean |z| >= floor, top few); the list is
+  // already sorted by anomalousness, so filter + slice reproduces the app's
+  // topContributors exactly and makes the "broad-based" empty state reachable
+  // for a genuinely diffuse sliced episode.
+  const sign = anomaly.direction === "up" ? 1 : -1;
+  const contributors: Contributor[] = parseJsonColumn<RawAttribution[]>(
+    attribution,
+    "attribution",
+    row.id,
+  )
+    .filter((a) => sign * a.meanZ >= DRIVER_MIN_ABS_Z)
+    .slice(0, MAX_CONTRIBUTORS)
+    .map((a) => ({
+      dimension: a.dimension,
+      value: a.value,
+      mean_z: a.meanZ,
+      lift: a.lift,
+      contribution_share: a.contributionShare,
+    }));
 
   return {
-    anomaly: resolveMetricName(anomaly as AnomalyRow),
+    anomaly: resolveMetricName(anomaly),
     contributors,
-    suggested_actions: JSON.parse(suggested_actions) as string[],
+    suggested_actions: parseJsonColumn<string[]>(
+      suggested_actions,
+      "suggested_actions",
+      row.id,
+    ),
   };
 }
