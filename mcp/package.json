@@ -1,0 +1,11 @@
+{
+  "name": "lumen-analytics-mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only MCP server over the Lumen Analytics demo: metric search, recent anomalies, and per-slice cause attribution.",
+  "type": "commonjs",
+  "bin": {
+    "lumen-analytics-mcp-server": "./dist/mcp/server.js"
+  },
+  "comment": "Not a standalone package: dependencies (@modelcontextprotocol/sdk, zod, better-sqlite3) resolve from the repository root node_modules. Build and run via the root package.json scripts (mcp:build, mcp:start, mcp:dev)."
+}
