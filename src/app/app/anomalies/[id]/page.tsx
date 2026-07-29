@@ -9,10 +9,11 @@ export const dynamic = "force-dynamic";
  * visitor to the anomaly log with that anomaly already open. Direct links no
  * longer 404.
  */
-export default function AnomalyByIdPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function AnomalyByIdPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   redirect(`/app/anomalies?focus=${encodeURIComponent(params.id)}`);
 }
