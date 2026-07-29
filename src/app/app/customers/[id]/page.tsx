@@ -92,11 +92,12 @@ function Fact({
   );
 }
 
-export default function CustomerDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function CustomerDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   const detail = getCustomerDetail(params.id);
   if (!detail) notFound();
 

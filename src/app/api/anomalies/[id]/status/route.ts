@@ -3,10 +3,8 @@ import { applyAnomalyAction, type AnomalyAction } from "@/lib/anomaly-actions";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(
-  request: Request,
-  { params }: { params: { id: string } },
-) {
+export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   let body: AnomalyAction;
   try {
     body = (await request.json()) as AnomalyAction;

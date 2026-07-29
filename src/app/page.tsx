@@ -170,12 +170,13 @@ const STEPS = [
   },
 ];
 
-export default function Home({
-  searchParams,
-}: {
-  searchParams: { signin?: string };
-}) {
-  const signedIn = cookies().has(SESSION_COOKIE);
+export default async function Home(
+  props: {
+    searchParams: Promise<{ signin?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const signedIn = (await cookies()).has(SESSION_COOKIE);
   return (
     <>
       <ParadigmBanner />
