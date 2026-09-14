@@ -46,8 +46,17 @@ surfaces:
       - { type: http_status, expect: 200 }
       - { type: text_present, text: "Priya" }
 
-  - name: session-api
+  # /api/session accepts POST only. The comment here used to say a GET with
+  # signout=1 clears the cookie and 303s to /, and the assertion below was
+  # written against that; measured live, GET is 405 and only POST returns the
+  # 303 to /. The claim was never caught because redirects_to fell through to
+  # the skip branch in quick_smoke.sh, so the assertion ran as a no-op. It is
+  # enforced now, so it asserts what a GET honestly does.
+  #
+  # 405 is still a real assertion: a 404 would mean the route had gone, and a
+  # 2xx or 3xx would mean it had started answering GETs. The POST that
+  # actually signs a user out is a deep-verify step.
+  - name: session-api-rejects-get
     url: /api/session?signout=1
     assertions:
-      # GET with signout=1 clears cookie and 303-redirects to /
-      - { type: redirects_to, expect: "https://lumenanalytics.projectnexuscode.org/" }
+      - { type: http_status, expect: 405 }
