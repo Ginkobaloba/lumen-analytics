@@ -10,7 +10,7 @@ Phase 0 infrastructure module (separate session).
 Canonical spec: the Lumen handoff embedded in the dispatching session,
 mirrored in `docs/handoffs/`. Cross-session coordination happens in
 `C:\dev\DEMOS_RUNNING_HANDOFF.md` (canonical per Phase 0; the older
-`DEMOS_RUNNING_HANDOFF_2026-06.md` holds session-1 detail).
+`C:\dev\_archive\docs\2026-06\DEMOS_RUNNING_HANDOFF_2026-06.md` holds session-1 detail).
 
 ## Status and chunk map
 
