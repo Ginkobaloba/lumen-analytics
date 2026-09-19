@@ -27,7 +27,7 @@ assertions:
   - { type: text_present, text: "Illustrative customers. All names fictional." }
 
   # Footer attribution
-  - { type: text_present, text: "A demo product by Paradigm Coding Solutions" }
+  - { type: text_present, text: "Demo product, all data is synthetic" }
 
   # DOM selectors (browser-layer: headless or headed)
   # Sign-in form posts to /api/session

@@ -8,15 +8,18 @@
 # of the demo story: expected-vs-actual series, contributor mini charts, and
 # triage actions. A broken or wrong-data panel makes the headline story fail.
 #
-# The verify harness should use a known anomaly id from the seeded dataset.
-# The churn-spike-m7 episode is scripted at days 186-204; its DB id will be 1
-# after a fresh `npm run seed:full`. Adjust the id if the seed order changes.
+# These tests use a known anomaly id from the seeded dataset. The churn-spike-m7
+# episode is scripted at days 186-204; its DB id will be 1 after a fresh
+# `npm run seed:full`. Adjust the id if the seed order changes. The API routes
+# do not require authentication; they check only whether the anomaly id exists.
+# On live deployments where the detector has not run, these tests will return 404.
+# Deep verify runs locally with seeded data, so these tests expect 200 and valid JSON.
 
 surface: anomaly-detail
 url: /api/anomalies/1
 
 assertions:
-  # API returns 200 with a valid anomaly record for id=1
+  # API returns 200 with a valid anomaly record for id=1 (assumes seeded DB)
   - { type: http_status, expect: 200 }
 
   # JSON response must include the anomaly fields the UI depends on
