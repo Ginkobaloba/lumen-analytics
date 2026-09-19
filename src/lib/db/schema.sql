@@ -86,6 +86,20 @@ CREATE TABLE IF NOT EXISTS anomalies (
 CREATE INDEX IF NOT EXISTS idx_anomalies_status ON anomalies(status);
 CREATE INDEX IF NOT EXISTS idx_anomalies_metric ON anomalies(metric_id, date);
 
+-- Immutable snapshot of the seed/detector's anomaly workflow state,
+-- written once by runDetection right after it (re)builds `anomalies`.
+-- Triage is per-visitor and client-side now (M1 fix, 2026-09-19): nothing
+-- should ever UPDATE `anomalies` again. openDb() diffs the live table
+-- against this snapshot on the process's first connection and restores
+-- any drift, which guards against leftover mutated rows in an
+-- already-running container's SQLite file from before this fix shipped.
+CREATE TABLE IF NOT EXISTS anomalies_seed_snapshot (
+  id          TEXT PRIMARY KEY,
+  status      TEXT NOT NULL,
+  assigned_to TEXT,
+  updated_at  TEXT NOT NULL
+);
+
 -- Per-customer series for the customer detail page.
 CREATE TABLE IF NOT EXISTS customer_mrr_monthly (
   customer_id TEXT NOT NULL REFERENCES customers(id),

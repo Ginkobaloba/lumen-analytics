@@ -164,6 +164,16 @@ export function runDetection(db: Database.Database): DetectionStats {
         stats.bySeverity[ep.severity]++;
       }
     }
+
+    // Snapshot the freshly written workflow state. Triage lives client-side
+    // per visitor now (M1 fix); openDb() uses this table to restore any
+    // rows an old container's SQLite file might still have drifted from
+    // seed, so it must always mirror what was just inserted above.
+    db.prepare("DELETE FROM anomalies_seed_snapshot").run();
+    db.exec(
+      `INSERT INTO anomalies_seed_snapshot (id, status, assigned_to, updated_at)
+       SELECT id, status, assigned_to, updated_at FROM anomalies`,
+    );
   })();
 
   return stats;

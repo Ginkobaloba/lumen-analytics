@@ -13,6 +13,7 @@ import {
 } from "@/components/charts/metric-trend-chart";
 import { cn } from "@/lib/utils";
 import { formatDateShort } from "@/lib/format";
+import { useTriageOverlayList } from "@/lib/use-triage-overlay";
 import type {
   AnomalyListItem,
   MetricDetailData,
@@ -127,6 +128,8 @@ export function MetricDetailExplorer({
   const { metric, series, anomalies, dimensions } = detail;
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<string>("all");
+  // Each visitor's local triage merged over the seed rows (M1 fix).
+  const overlaidAnomalies = useTriageOverlayList(anomalies);
 
   const activeDimension = dimensions.find((d) => d.dimension === view) ?? null;
 
@@ -172,14 +175,14 @@ export function MetricDetailExplorer({
             <MetricTrendChart
               data={series}
               unit={metric.unit}
-              markers={anomalies}
+              markers={overlaidAnomalies}
               onMarkerClick={setSelected}
             />
           )}
         </CardContent>
       </Card>
 
-      <AnomalyListCard anomalies={anomalies} onSelect={setSelected} />
+      <AnomalyListCard anomalies={overlaidAnomalies} onSelect={setSelected} />
 
       <AnomalyPanel anomalyId={selected} onClose={() => setSelected(null)} />
     </div>

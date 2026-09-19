@@ -65,3 +65,40 @@ Tailwind v3 (which create-next-app@14 ships). Its registry also emits
 oklch values that the generated config wrapped in hsl(), which is
 invalid CSS; fixed by storing complete hex values in the CSS variables
 and referencing them as `var(--x)` in tailwind.config.ts.
+
+## 2026-09-19: Anomaly triage moved client-side, per visitor (finding M1)
+
+`POST /api/anomalies/[id]/status` needed no session (middleware.ts's
+matcher only ever covered `/app/*`) and ran `UPDATE anomalies` on the one
+shared SQLite database every visitor reads. Any visitor or scanner could
+mark every anomaly "false positive," and every later visitor saw the
+demo's headline anomaly story as already dismissed until a redeploy.
+
+Fix, following the anonymous-by-design direction
+(`COUNCIL_COMPLIANCE_2026-09-19.md` 1.1/1.2 -- demos store no per-visitor
+state server-side): triage (Acknowledge, Assign, Mark as false positive)
+now lives entirely in the visitor's browser, in localStorage, merged over
+the server-rendered anomaly rows at render time
+(`src/lib/triage-overlay.ts`, `src/lib/use-triage-overlay.ts`). The
+shared `anomalies` table is seed data only from here on:
+
+- The status route no longer writes to `anomalies`. It still requires
+  the demo session cookie (a cheap scanner filter, same gate `/app/*`
+  already has) and still 404s for an unknown id, but a valid cookie is
+  not a write permit either -- it just returns a deprecated-endpoint
+  response.
+- `runDetection` snapshots the seed/detector's workflow state into a new
+  `anomalies_seed_snapshot` table. `openDb()` diffs `anomalies` against
+  that snapshot on the process's first connection and restores any
+  drift, which covers an already-running container's SQLite file that
+  had mutated rows from before this fix (belt-and-suspenders; nothing
+  should ever drift again going forward).
+- `src/lib/anomaly-actions.ts` (the server-side DB writer) is deleted.
+
+One visitor's triage is never visible to another visitor or a fresh
+client; a cleared localStorage (or a different browser) always reads the
+seed story. Tests: `tests/triage-overlay.test.ts` (visitor isolation,
+forward-only transitions, SSR no-op, corrupt-storage safety),
+`tests/anomaly-status-route.test.ts` (cookie gate, shared row never
+mutates), `tests/anomaly-seed-guard.test.ts` (snapshot + restore-on-
+restart).

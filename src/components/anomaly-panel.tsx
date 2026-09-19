@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -33,6 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ExpectedVsActualChart } from "@/components/charts/expected-vs-actual-chart";
 import { cn } from "@/lib/utils";
 import { formatDateShort, formatMetricValue } from "@/lib/format";
+import { applyOverlay, applyTriageAction, type AnomalyTriageAction } from "@/lib/triage-overlay";
 import type { AnomalyDetail } from "@/lib/anomaly-detail";
 
 const SEVERITY_BADGE: Record<string, string> = {
@@ -95,7 +95,6 @@ export function AnomalyPanel({
   anomalyId: string | null;
   onClose: () => void;
 }) {
-  const router = useRouter();
   const [detail, setDetail] = useState<AnomalyDetail | null>(null);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [pending, setPending] = useState<string | null>(null);
@@ -109,7 +108,9 @@ export function AnomalyPanel({
     fetch(`/api/anomalies/${anomalyId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
       .then((d: AnomalyDetail) => {
-        if (!cancelled) setDetail(d);
+        // Merge this browser's local triage over the server (seed) row.
+        // The server response never reflects any visitor's prior clicks.
+        if (!cancelled) setDetail(applyOverlay(d));
       })
       .catch(() => {
         if (!cancelled) onClose();
@@ -126,28 +127,22 @@ export function AnomalyPanel({
       .catch(() => setTeam([]));
   }, []);
 
-  const act = async (
-    body: { action: "acknowledge" } | { action: "assign"; userId: string } | { action: "false_positive" },
-  ) => {
+  // Triage is per-visitor and client-side (M1 fix): this writes to this
+  // browser's localStorage overlay only, never to the server. No fetch,
+  // no other visitor ever sees it.
+  const act = (body: AnomalyTriageAction) => {
     if (!detail) return;
     setPending(body.action);
     try {
-      const r = await fetch(`/api/anomalies/${detail.id}/status`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      const result = applyTriageAction(detail, body, team);
+      if ("error" in result) return;
+      setDetail({
+        ...detail,
+        status: result.status,
+        assigned_to: result.assignedTo,
+        assignee_name: result.assigneeName,
+        updated_at: result.updatedAt,
       });
-      if (r.ok) {
-        const updated = await r.json();
-        setDetail({
-          ...detail,
-          status: updated.status,
-          assigned_to: updated.assigned_to,
-          assignee_name: updated.assignee_name,
-          updated_at: updated.updated_at ?? detail.updated_at,
-        });
-        router.refresh();
-      }
     } finally {
       setPending(null);
     }
