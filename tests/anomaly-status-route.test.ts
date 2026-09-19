@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 import { createDb } from "@/lib/db";
 import { runDetection } from "@/lib/ml/run-detection";
 import { seed } from "../scripts/seed";
+import { TEST_SECRET, hostileCookies, signSession } from "./helpers/session-tokens";
 
 const END = "2026-06-10";
 const SESSION_COOKIE = "lumen_demo_session";
@@ -25,8 +26,11 @@ describe("POST /api/anomalies/[id]/status (M1)", () => {
   const dbPath = path.join(tmpDir, "test.db");
   let anomalyId: string;
   let POST: typeof import("@/app/api/anomalies/[id]/status/route").POST;
+  let validCookie: string;
 
   beforeAll(async () => {
+    process.env.SESSION_SECRET = TEST_SECRET;
+    validCookie = await signSession();
     const db = createDb(dbPath);
     seed(db, END);
     runDetection(db);
@@ -39,6 +43,7 @@ describe("POST /api/anomalies/[id]/status (M1)", () => {
 
   afterAll(() => {
     delete process.env.LUMEN_DB_PATH;
+    delete process.env.SESSION_SECRET;
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     } catch {
@@ -67,11 +72,41 @@ describe("POST /api/anomalies/[id]/status (M1)", () => {
     expect(await readRow()).toEqual(before);
   });
 
+  it("rejects every forged, tampered, expired, alg-none or unsigned cookie with 401, touching nothing", async () => {
+    const before = await readRow();
+    for (const [name, value] of Object.entries(await hostileCookies())) {
+      const req = new NextRequest(`http://0.0.0.0:3000/api/anomalies/${anomalyId}/status`, {
+        method: "POST",
+        headers: { cookie: `${SESSION_COOKIE}=${value}` },
+        body: JSON.stringify({ action: "false_positive" }),
+      });
+      const res = await POST(req, { params: Promise.resolve({ id: anomalyId }) });
+      expect(res.status, name).toBe(401);
+    }
+    expect(await readRow()).toEqual(before);
+  });
+
+  it("fails closed with 500 misconfigured when SESSION_SECRET is short, even with a valid-looking cookie", async () => {
+    process.env.SESSION_SECRET = "short";
+    try {
+      const req = new NextRequest(`http://0.0.0.0:3000/api/anomalies/${anomalyId}/status`, {
+        method: "POST",
+        headers: { cookie: `${SESSION_COOKIE}=${validCookie}` },
+        body: JSON.stringify({ action: "false_positive" }),
+      });
+      const res = await POST(req, { params: Promise.resolve({ id: anomalyId }) });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "misconfigured" });
+    } finally {
+      process.env.SESSION_SECRET = TEST_SECRET;
+    }
+  });
+
   it("accepts a request with the session cookie but never mutates the shared row", async () => {
     const before = await readRow();
     const req = new NextRequest(`http://0.0.0.0:3000/api/anomalies/${anomalyId}/status`, {
       method: "POST",
-      headers: { cookie: `${SESSION_COOKIE}=demo-user` },
+      headers: { cookie: `${SESSION_COOKIE}=${validCookie}` },
       body: JSON.stringify({ action: "false_positive" }),
     });
     const res = await POST(req, { params: Promise.resolve({ id: anomalyId }) });
@@ -87,7 +122,7 @@ describe("POST /api/anomalies/[id]/status (M1)", () => {
     const before = await readRow();
     const req = new NextRequest(`http://0.0.0.0:3000/api/anomalies/does-not-exist/status`, {
       method: "POST",
-      headers: { cookie: `${SESSION_COOKIE}=demo-user` },
+      headers: { cookie: `${SESSION_COOKIE}=${validCookie}` },
       body: JSON.stringify({ action: "acknowledge" }),
     });
     const res = await POST(req, { params: Promise.resolve({ id: "does-not-exist" }) });
@@ -98,7 +133,7 @@ describe("POST /api/anomalies/[id]/status (M1)", () => {
   it("400s on invalid JSON with the cookie present", async () => {
     const req = new NextRequest(`http://0.0.0.0:3000/api/anomalies/${anomalyId}/status`, {
       method: "POST",
-      headers: { cookie: `${SESSION_COOKIE}=demo-user` },
+      headers: { cookie: `${SESSION_COOKIE}=${validCookie}` },
       body: "not json",
     });
     const res = await POST(req, { params: Promise.resolve({ id: anomalyId }) });

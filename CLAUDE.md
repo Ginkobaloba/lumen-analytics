@@ -36,8 +36,11 @@ Chunks 2.1-2.13 per the spec. Track progress in `docs/handoffs/`.
   signup cohort, brand color ramp, also esbuild/postcss override bumps)
 - 2.11 stubs: DONE (PR #9; segments with live counts, integrations
   catalog, settings with team + read-only toggles)
-- demo auth: DONE (PR #10; AxlePoint cookie + middleware pattern,
-  lumen_demo_session gating /app, one-click sign-in/out)
+- demo auth: DONE (PR #10; one-click sign-in/out gating /app). Since
+  2026-09-19 the lumen_demo_session cookie is a signed HS256 session
+  (`src/lib/portal-session.ts`) verified by the middleware and the
+  session-required API routes; SESSION_SECRET (32+ chars) is REQUIRED in
+  the deploy env or sign-in fails closed.
 - 2.12 marketing landing: DONE (PR #11; hero with SVG anomaly visual,
   fictional logo strip with microcaption, features, CTA, banner)
 - Dockerfile + deploy: DONE (PR #12). LIVE at
