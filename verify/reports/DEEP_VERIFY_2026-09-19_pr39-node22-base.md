@@ -1,7 +1,185 @@
 # Deep Verify: PR #39 move to node:22-bookworm-slim base image (2026-09-19)
 
 Overall: PASS
-Tested-SHA: 9a5785b08cc963263c0e66597ae94acc5a83244d
+Tested-SHA: a42f73e1d89a07fb245eab48c18583b9c0da7a30
+
+This report covers two runs. The **full deep verify** was run against
+`9a5785b08cc963263c0e66597ae94acc5a83244d`. The branch then took a merge from
+`main` (PRs #40 and #41 landed and conflicted in `docs/demos/lumen/decisions.md`)
+and the head moved to `a42f73e1d89a07fb245eab48c18583b9c0da7a30`. A **delta
+re-verify** was run against that new head. Section 0 states exactly which
+findings were re-established on `a42f73e` and which are carried forward from
+`9a5785b`, and why the carry-forward is sound. Everything from section 1 onward
+is the original full run against `9a5785b` and should be read as such.
+
+---
+
+# Section 0: Delta re-verify at a42f73e (merge of main into chore/node22-base)
+
+**Delta verdict: PASS.** Nothing found at `a42f73e` changes the verdict reached
+at `9a5785b`.
+
+## 0.1 Why this is a delta and not a full re-run
+
+The Orchestrator approved a delta: a docs-only conflict resolution does not
+invalidate a fallback-compile matrix. The delta was scoped on evidence, not on
+assertion. The load-bearing fact is this:
+
+```
+git diff 9a5785b a42f73e -- Dockerfile     ->  0 bytes of output
+Dockerfile blob at 9a5785b:  e2adb41d0c35a9e02609ad0ac7483e1ccb3f58bf
+Dockerfile blob at 608e9b4:  e2adb41d0c35a9e02609ad0ac7483e1ccb3f58bf
+Dockerfile blob at a42f73e:  e2adb41d0c35a9e02609ad0ac7483e1ccb3f58bf
+```
+
+The Dockerfile is byte-identical across the tested commit, the report commit and
+the merge head. Since the prebuild-versus-compile behavior, the fallback compile
+and the runtime toolchain absence are all properties of the Dockerfile plus the
+`package-lock.json` pin (`better-sqlite3@12.10.0`, also unchanged), re-running
+that matrix would test the same bytes a second time.
+
+## 0.2 Diff review: what actually changed
+
+The merge changed 25 files relative to the branch tip `608e9b4`. Each was
+classified by comparing its blob at `a42f73e` against its blob at `c9b8746`
+(the `main` tip that was merged in):
+
+- **23 of 25 are byte-identical to `main`**, that is, inherited verbatim with no
+  branch-side edit: `.env.example`, `CLAUDE.md`, `docs/PORTAL_FEDERATION.md`,
+  the #41 ledger entry, `package.json`, four API routes
+  (`alerts/slack`, `anomalies/[id]/status`, `portal/handoff`, `session`),
+  `src/lib/alert-rate-limit.ts`, `src/lib/portal-session.ts`,
+  `src/middleware.ts`, seven test files plus `tests/helpers/session-tokens.ts`,
+  two `verify/assertions/*.yml`, `verify/tier_map.yml`, and the PR #41
+  deep-verify report.
+- **2 of 25 are branch-specific**, and they are exactly the two files the
+  coordinator named:
+  - `docs/demos/lumen/decisions.md`: the conflict resolution. The diff against
+    `608e9b4` is **additions only, no deletions**: main's #41 entry is inserted
+    above the existing `## 2026-09-19: Node 22 base image` section, which is
+    untouched.
+  - `docs/ledger/...-node-22-base-image-keep-build-toolchain-as-prebuild-fallback.md`:
+    one appended bullet recording this verify's fallback-compile proof so a
+    future reader does not delete the toolchain as redundant. Additions only.
+
+Conversely, what the branch still adds on top of `main` is 4 files and only 4:
+`Dockerfile`, `docs/demos/lumen/decisions.md`, the node22 ledger entry, and this
+report. **No source, test, workflow or lockfile change is branch-specific.**
+Confirmed.
+
+## 0.3 What was RE-RUN at a42f73e
+
+A fresh `docker build --no-cache` from the merge head produced `dvlum:dvn39d`,
+495 MB, identical in size to the `9a5785b` image.
+
+| Check | Result at a42f73e |
+|---|---|
+| `node --version` in the runtime container | **v22.23.2** |
+| Runtime toolchain | gcc, g++, cc, make, python3, python, node-gyp all **ABSENT** |
+| `better_sqlite3.node` in the runtime image | present at `/app/node_modules/better-sqlite3/build/Release/better_sqlite3.node` |
+| `/` | 200, 39,310 bytes, 0.017 s; both smoke copy strings present |
+| `/app` anonymous | 307 to `/?signin=required` |
+| `/app/anomalies` anonymous | 307 to `/?signin=required` |
+| GET `/api/session?signout=1` | 405 |
+| `/api/team` | 200, contains "Priya" |
+| `/api/anomalies/1` | 404, `{"error":"Anomaly not found"}` |
+| POST `/api/session` (the NEW signed session from #41) | 303, relative `location: /app`, `Secure; HttpOnly; SameSite=lax`, a 359-character signed JWT with a 1 hour expiry |
+| `/app` authed | 200 (107,868 bytes) |
+| `/app/anomalies` authed | 200 (107,544 bytes) |
+| `/app/metrics` authed | 200 (249,834 bytes) |
+| `/api/anomalies/an-expansion_mrr-2026-05-27` | 200, 11,801 bytes |
+| `/app/anomalies?focus=<that id>` | 200 |
+| Direct better-sqlite3 read in the container | opened `/app/data/lumen.db`, better-sqlite3 12.10.0 on node v22.23.2, 23 anomaly rows and 23 seed-snapshot rows intact |
+| Container log | `Ready in 55ms`, 0 error, 0 `misconfigured`, 0 `SqliteError` lines |
+
+The sign-in check matters more at this head than it did at `9a5785b`: PR #41
+replaced the literal `demo-user` cookie with a real HS256 JWT minted through
+`jose`, verified in the Edge middleware. That is new cryptographic code running
+on a new Node major, and it was exercised end to end here. It works. A
+throwaway `SESSION_SECRET` was generated for the container and never printed; no
+file under `~/.secrets` and no `.env*` other than the committed `.env.example`
+was read at any point.
+
+**Tests at a42f73e, run inside the image's own node:22 Linux build stage:**
+
+| Check | Result |
+|---|---|
+| `npx vitest run` | **21 files, 145 of 145 passed** (was 19 files / 113 at `9a5785b`; the 32 new tests are #41's `middleware-session`, `slack-route`, `alert-rate-limit`, `session-redirect`, `portal-handoff` and the expanded `anomaly-status-route` suites) |
+| `npm run typecheck` | exit 0 |
+| `npm run mcp:typecheck` | exit 0 |
+| `npm run lint` | "No ESLint warnings or errors" |
+| `npm run ledger:check` (new in #40) | 3 entries, 0 problems (run on the host; see W6) |
+| `next build` | clean, inside the image build |
+
+## 0.4 What is CARRIED FORWARD from 9a5785b, and why that is sound
+
+These were **not** re-run at `a42f73e`. Each is carried forward, with the reason
+stated so a reviewer can check the reasoning rather than trust it:
+
+| Carried forward from 9a5785b | Why the carry-forward holds |
+|---|---|
+| The prebuild-not-compile forensics (section 4.1): `npm ci` in 19.9 s, no gyp artifacts in the deps stage | Depends only on the Dockerfile and the `better-sqlite3@12.10.0` lockfile pin, both byte-identical at `a42f73e`. The delta build's `npm ci` finished in 13.6 s, still far short of a compile, which is consistent but is not offered as the primary evidence |
+| The forced-prebuild-failure compile (section 4.2): `npm_config_better_sqlite3_binary_host` pointed at the discard port, `gyp info ok`, module loaded and returned a query result | Same reason. The deps stage is the same bytes. Re-running it would re-measure the same inputs |
+| The no-toolchain control (section 4.3): build fails with "Could not find any Python installation to use" | Same reason |
+| The node:20 size baseline (section 5): 459 MB vs 495 MB, delta exactly the base-image delta | The `a42f73e` image is 495 MB, identical to the `9a5785b` image, so the measured delta is unchanged |
+| The recharts SSR warning control (W4): 38 warnings on node:20 and 38 on node:22 over the same pages | The `a42f73e` container emits the same 38 over the same pages. The node:20 side of the comparison is unchanged code |
+
+**Where the carry-forward would NOT have been sound, and was therefore re-run
+instead:** anything that touches application code. Main brought in a new session
+implementation, new middleware, a new rate limiter and six new test suites. None
+of that is covered by the `9a5785b` evidence, so the whole smoke pass and the
+entire test suite were re-run at `a42f73e` rather than carried.
+
+## 0.5 Delta Theater Check
+
+| Claimed about the merge | Verification found | Verdict |
+|---|---|---|
+| The only non-merge-inherited changes are two doc files | 23 of 25 changed files are byte-identical to `main`; the 2 exceptions are `decisions.md` and the node22 ledger entry | CONFIRMED |
+| The Dockerfile is untouched | Blob `e2adb41d...` at `9a5785b`, `608e9b4` and `a42f73e`; `git diff` prints nothing | CONFIRMED |
+| The conflict kept main's #41 entry first and this branch's node22 entry | Additions only, no deletions; the node22 section is unmodified | CONFIRMED |
+| `9a5785b` and `608e9b4` are still in history (merged, not rebased) | Both are ancestors of `a42f73e` on the first-parent side; `git log --graph` shows the merge | CONFIRMED |
+| The appended ledger bullet records this verify's fallback proof accurately | Accurate on the mechanism (discard-port binary host), on the with-toolchain result and on the control's exact error string. One phrase overstates slightly, see W7 | CONFIRMED with one wording nit |
+
+## 0.6 Delta blockers
+
+None.
+
+## 0.7 Delta warnings (added to the warnings in section 10)
+
+### W6. `npm run ledger:check` is vacuous inside the container
+Run in the image's build stage it reports "0 entries, 0 problems", because
+`.dockerignore` excludes `docs/`, so the ledger directory is not in the build
+context at all. Run on the host it correctly reports 3 entries, 0 problems. The
+script is from PR #40, not this PR, but anyone who wires `ledger:check` into a
+container-based CI step will get a permanently green check that inspects
+nothing. **Fix:** run it outside the image, or stop excluding `docs/`.
+**Tier:** Sonnet executor, and it belongs to #40's owner, not this PR.
+
+### W7. One phrase in the appended ledger bullet overstates the evidence
+The bullet says that with the toolchain present "node-gyp compiled the module
+and **the app ran**". What was actually proven is narrower and still sufficient:
+node-gyp compiled better-sqlite3 to `gyp info ok`, and the compiled module was
+loaded and executed a query (`FALLBACK_OK ... result 42`). A full application
+build and serve was **not** performed from the forced-fallback image. The
+conclusion the bullet draws (do not delete the toolchain) is correct either way.
+**Fix:** reword to "node-gyp compiled the module and it loaded and ran a
+query". **Tier:** Sonnet executor. Not a merge blocker.
+
+### W8. Deploy consequence inherited from #41, worth repeating here
+`SESSION_SECRET` (32+ characters) is now **required** in the deploy environment
+or sign-in fails closed with 500 `misconfigured` and `/app` stays locked. That
+is #41's change, not this PR's, and #41 has its own deep-verify report in
+`verify/reports/`. It is restated here only because merging this PR is what
+carries that requirement onto this branch, and the delta container needed a
+generated secret to serve `/app` at all.
+
+---
+
+# Section 1 onward: the full deep verify at 9a5785b
+
+Everything below was run against
+`9a5785b08cc963263c0e66597ae94acc5a83244d`, before the merge. Read section 0 for
+what was re-established at the current head.
 
 Independent deep verify of `Ginkobaloba/lumen-analytics` PR #39 (branch
 `chore/node22-base`, label `tier-3`). The verifier did not write the PR and
