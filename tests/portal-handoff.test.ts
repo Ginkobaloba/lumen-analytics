@@ -143,6 +143,45 @@ describe("POST /api/portal/handoff", () => {
     expect(payload?.sub).toBe("drew@example.com");
   });
 
+  it("the handoff session is a signed session (jti, iat, exp, src=portal) the /app middleware accepts", async () => {
+    const key = await makeKey("active-mw");
+    installJwksFetch([key.jwk]);
+    const token = await mintToken(key, { sub: "mw@example.com" });
+    const { POST } = await loadRouteFresh();
+
+    const res = await POST(buildRequest(token));
+    expect(res.status).toBe(200);
+    const cookieValue = (res.headers.get("set-cookie") ?? "").match(/lumen_demo_session=([^;]+)/)![1];
+
+    const { verifyLumenSession } = await import("@/lib/portal-session");
+    const payload = await verifyLumenSession(cookieValue);
+    expect(payload?.src).toBe("portal");
+    expect(typeof payload?.jti).toBe("string");
+    expect(payload!.exp - payload!.iat).toBe(3600);
+
+    const { middleware } = await import("@/middleware");
+    const { NextRequest } = await import("next/server");
+    const mw = await middleware(
+      new NextRequest("http://0.0.0.0:3000/app", {
+        headers: { cookie: `lumen_demo_session=${cookieValue}` },
+      }),
+    );
+    expect(mw.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("returns 500 when SESSION_SECRET is shorter than 32 characters", async () => {
+    process.env.SESSION_SECRET = "a".repeat(31);
+    const key = await makeKey("active-short-secret");
+    installJwksFetch([key.jwk]);
+    const token = await mintToken(key, { sub: "user@example.com" });
+    const { POST } = await loadRouteFresh();
+
+    const res = await POST(buildRequest(token));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe("misconfigured");
+    expect(res.headers.get("set-cookie") ?? "").not.toContain("lumen_demo_session");
+  });
+
   it("sets the Secure flag when NODE_ENV is production", async () => {
     const savedNodeEnv = process.env.NODE_ENV;
     (process.env as Record<string, string>).NODE_ENV = "production";

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/session/route";
+import { TEST_SECRET } from "./helpers/session-tokens";
 
 /**
  * Regression test for the "Open the live demo" redirect bug.
@@ -16,6 +17,14 @@ import { POST } from "@/app/api/session/route";
  * them.
  */
 describe("POST /api/session redirect", () => {
+  // Sign-in mints a signed session now, so it needs a (throwaway) secret.
+  beforeAll(() => {
+    process.env.SESSION_SECRET = TEST_SECRET;
+  });
+  afterAll(() => {
+    delete process.env.SESSION_SECRET;
+  });
+
   it("sign-in returns a relative /app Location, never an absolute origin", async () => {
     const req = new NextRequest("http://0.0.0.0:3000/api/session", { method: "POST" });
     const res = await POST(req);

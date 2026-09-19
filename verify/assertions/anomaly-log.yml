@@ -6,7 +6,8 @@
 # touches this surface or its backend.
 #
 # NOTE: assertions that require authentication must be run with a valid
-# lumen_demo_session cookie injected by the verify harness. The quick smoke
+# lumen_demo_session cookie: a signed session JWT minted by POST /api/session
+# (a hand-set value such as "demo-user" is rejected by the middleware). The quick smoke
 # check on /app/anomalies confirms the redirect; this deep file is for a
 # session-aware browser run.
 

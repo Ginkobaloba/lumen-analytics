@@ -48,13 +48,21 @@ surfaces:
     tier: 3
     deep_verify_before_merge: true
     reason: >
-      The AxlePoint cookie pattern (POST /api/session, middleware on /app/*,
-      portal handoff at /api/portal/handoff) gates the entire authenticated
-      demo workspace. The middleware checks only that the lumen_demo_session
-      cookie is present; it does not verify the cookie's content or signature.
-      A broken sign-in flow locks visitors out of the app entirely. Session
-      handling bugs that leak or fail silently are hard to notice in
-      smoke-only checks.
+      Signed-session gate for the entire authenticated demo workspace. Both
+      sign-in paths (one-click POST /api/session and the Portal handoff at
+      POST /api/portal/handoff) mint an HS256 JWT (jti, iat, exp, 1h TTL)
+      signed with SESSION_SECRET into the lumen_demo_session cookie. The
+      middleware on /app/* verifies it with jose in the Edge runtime, and the
+      session-required API routes (POST /api/alerts/slack, POST
+      /api/anomalies/[id]/status) verify it too: validity, not presence, so
+      forged, tampered, expired, alg-none and unsigned values are rejected.
+      A missing or short (under 32 chars) SESSION_SECRET fails closed: sign-in
+      and handoff answer 500 misconfigured, /app redirects, and the API routes
+      answer 500. Portal handoff tokens are NOT replay-protected (the portal
+      mints no jti yet). /api/alerts/slack is also rate limited: 2/min per
+      CF-Connecting-IP plus a 5/min global ceiling. A broken sign-in flow
+      locks visitors out of the app entirely, and a missing SESSION_SECRET in
+      the deploy env does exactly that.
 
   - name: executive-overview
     tier: 2

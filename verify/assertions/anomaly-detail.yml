@@ -46,9 +46,9 @@ assertions:
 
 ---
 # Unauthenticated triage action: POST /api/anomalies/1/status
-# The status endpoint does not require a session in the current implementation,
-# but it requires a valid body. A POST with empty body returns 400 or similar.
-# Verify that 404 is returned for a nonexistent anomaly.
+# The status endpoint requires a VALID signed session (401 without one, 500
+# when SESSION_SECRET is unusable) and never writes shared state. This
+# surface checks the GET detail route instead: 404 for a nonexistent anomaly.
 surface: anomaly-detail-not-found
 url: /api/anomalies/999999
 

@@ -17,7 +17,8 @@
     "mcp:build": "tsc -p mcp/tsconfig.json",
     "mcp:typecheck": "tsc -p mcp/tsconfig.json --noEmit",
     "mcp:start": "node mcp/dist/mcp/server.js",
-    "mcp:dev": "tsx mcp/server.ts"
+    "mcp:dev": "tsx mcp/server.ts",
+    "ledger:check": "node scripts/ledger.mjs check"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
