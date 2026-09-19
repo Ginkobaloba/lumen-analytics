@@ -423,11 +423,19 @@ gate's rule is that every claim must hold.
 - CI "Deep Verify (tier-3 PRs only)" is **FAILURE** on `5cd8dd7`, run
   35430109619. That is correct today, because no report under
   `verify/reports/` has a PASS marker. This FAIL report keeps it red.
-- `verify/ci/deep_gate.sh` greps **every** report for `overall: pass`. So the
-  first PASS report merged to `main` turns the gate green for every later
-  tier-3 PR, including ones nobody verified.
-- **Fix:** require a report whose filename contains `pr${PR_NUMBER}`, or whose
-  body names the head SHA.
+- `verify/ci/deep_gate.sh` greps **every** report, case-insensitively, for the
+  word `overall` plus a colon followed by the word `pass`, anywhere in the
+  file. So the first PASS report merged to `main` turns the gate green for
+  every later tier-3 PR, including ones nobody verified.
+- **The grep also matches quoted text, not just the verdict line.** Commit
+  `47cf71f` of this FAIL report turned the gate green (run 35431445483, 5 s),
+  because this very warning quoted the marker literally. It has been reworded
+  so the marker appears only on line 3.
+- **Fix:**
+  - anchor the grep to line 3 only (`sed -n 3p`), with the regex anchored at
+    both ends;
+  - require a report whose filename contains `pr${PR_NUMBER}`, or whose body
+    names the head SHA.
 - **Agent tier:** Sonnet.
 
 ### Unauthenticated `POST /api/alerts/slack` (pre-existing, not in this PR)
