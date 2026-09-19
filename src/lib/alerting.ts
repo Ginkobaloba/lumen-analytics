@@ -177,13 +177,13 @@ export async function sendSlackAlert(
       error: res.ok ? undefined : `Webhook returned ${res.status}`,
       payload,
     };
-  } catch (err) {
+  } catch {
     return {
       configured: true,
       delivered: false,
       status: null,
       target,
-      error: err instanceof Error ? err.message : "Network error",
+      error: "delivery failed",
       payload,
     };
   }

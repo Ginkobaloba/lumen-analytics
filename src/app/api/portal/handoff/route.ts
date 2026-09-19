@@ -41,22 +41,21 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as HandoffBody;
   } catch {
-    return jsonError(400, "bad_request", "request body is not valid JSON");
+    return jsonError(400, "bad_request");
   }
   const token = typeof body.token === "string" ? body.token : "";
 
   let config: PortalVerifyConfig;
   try {
     config = portalVerifyConfigFromEnv();
-  } catch (err) {
+  } catch {
     // Misconfiguration is a 500: the operator forgot to wire the env vars.
-    const detail = err instanceof Error ? err.message : "config error";
-    return jsonError(500, "misconfigured", detail);
+    return jsonError(500, "misconfigured");
   }
 
   const result: VerifyResult = await verifyPortalToken(token, config);
   if (!result.ok) {
-    return jsonError(401, "unauthorized", result.reason);
+    return jsonError(401, "unauthorized");
   }
 
   const customerId = result.payload.customer_id ?? null;
@@ -70,9 +69,8 @@ export async function POST(request: NextRequest) {
       customerId,
       role,
     }));
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : "session error";
-    return jsonError(500, "misconfigured", detail);
+  } catch {
+    return jsonError(500, "misconfigured");
   }
 
   const response = NextResponse.json(
@@ -94,6 +92,6 @@ export async function POST(request: NextRequest) {
   return response;
 }
 
-function jsonError(status: number, error: string, detail: string) {
-  return NextResponse.json({ ok: false, error, detail }, { status });
+function jsonError(status: number, error: string) {
+  return NextResponse.json({ error }, { status });
 }

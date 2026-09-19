@@ -31,8 +31,20 @@ jobs:
 
       - name: Install yq
         run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          YQ_VERSION="v4.44.3"
+          YQ_BINARY="yq_linux_amd64"
+          YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}"
+          CHECKSUMS_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums"
+
+          # Download checksums
+          sudo wget -qO /tmp/checksums "$CHECKSUMS_URL"
+
+          # Download yq binary
+          sudo wget -qO /usr/local/bin/yq "$YQ_URL"
+
+          # Verify SHA256
+          sha256sum -c <(grep "$YQ_BINARY" /tmp/checksums) || exit 1
+
           sudo chmod +x /usr/local/bin/yq
 
       - name: Run quick smoke against verify/smoke.yml

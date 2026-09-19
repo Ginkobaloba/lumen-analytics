@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { buildSlackPayload, sendSlackAlert, type SlackAlertInput } from "@/lib/alerting";
 import { getAnomalyDetail } from "@/lib/anomaly-detail";
+import { SESSION_COOKIE } from "@/middleware";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,44 @@ export const dynamic = "force-dynamic";
   payload so the UI can show exactly what was sent, configured or not.
 */
 
-export async function POST(request: Request) {
+// In-memory rate limit: map of client IPs to request timestamps
+const requestHistory = new Map<string, number[]>();
+const RATE_LIMIT_REQUESTS = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 60 seconds
+
+function isRateLimited(clientIp: string): boolean {
+  const now = Date.now();
+  const timestamps = requestHistory.get(clientIp) || [];
+
+  // Remove old timestamps outside the window
+  const filtered = timestamps.filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
+
+  if (filtered.length >= RATE_LIMIT_REQUESTS) {
+    return true;
+  }
+
+  // Record this request
+  filtered.push(now);
+  requestHistory.set(clientIp, filtered);
+  return false;
+}
+
+function getClientIp(request: NextRequest): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0].trim() || request.headers.get("x-real-ip") || "unknown";
+}
+
+export async function POST(request: NextRequest) {
+  // Require session cookie
+  if (!request.cookies.has(SESSION_COOKIE)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // Check rate limit
+  const clientIp = getClientIp(request);
+  if (isRateLimited(clientIp)) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
+
   let body: { anomalyId?: string };
   try {
     body = (await request.json()) as { anomalyId?: string };
