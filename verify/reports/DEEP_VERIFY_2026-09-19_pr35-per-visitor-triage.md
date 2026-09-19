@@ -1,7 +1,212 @@
 # Deep Verify: PR #35 per-visitor anomaly triage (2026-09-19)
 
-Overall: FAIL
-Tested-SHA: 5cd8dd7b860d8ef30218329984211e0652ce6c4f
+Overall: PASS
+Tested-SHA: a33854c65a0c751b004d490f5cfad130accd62a5
+
+This report covers two runs on the same day:
+- **Run 1**, on `5cd8dd7`, came out FAIL on two per-visitor claims (B1, B2).
+  Its findings are kept below as history.
+- **Run 2** is the re-verify on `a33854c`, which fixes both. Every claim held,
+  so the verdict above is for `a33854c`.
+
+## 0. Re-verify on a33854c (run 2)
+
+### Scope and environment
+
+- **Target:** `fix/per-visitor-triage` at `a33854c`, whose parent is `44523a9`
+  (run 1's report commits on top of `5cd8dd7`).
+- **Image:** one image, `demo-lumen:dv35r2`, built from a clean `git archive`
+  of `a33854c`, with the same temporary-npmrc handling as run 1:
+  - the npmrc was deleted right after the build;
+  - the build log carries 0 token strings;
+  - 23 anomalies were detected;
+  - `next build` compiled with no warnings.
+- **Containers:** two throwaway containers on the runtime env file, both with
+  0 restarts at the end:
+  - `dvl35-r2a` on `127.0.0.1:18813` for the sweep, the browser runs and the
+    assertions;
+  - `dvl35-r2seed` on `127.0.0.1:18814` for the seed guard.
+- **Untouched:** the live container, the public URL, the demo-proxy and
+  cloudflare-config. The live container was still up at cleanup. Both
+  containers and the image were removed.
+- **Mode:** as in run 1, deep requested with layer 5 (headed) not run, and no
+  adversarial generator.
+
+### (4) Diff review: `5cd8dd7..a33854c`
+
+- `git diff --stat 44523a9 a33854c` changes 8 files:
+  - `Dockerfile` (a comment only);
+  - `decisions.md` (a B1/B2 follow-up section, plus the reworded guard
+    paragraph);
+  - `anomaly-panel.tsx`, 1 line: Acknowledge is disabled when
+    `status !== "active"`;
+  - comments only in `db/index.ts`, `schema.sql` and `run-detection.ts`
+    (`restoreAnomaliesToSeed` has no code change);
+  - `triage-overlay.ts`:
+    - `VALID_STATUSES` and `isValidOverlayEntry`;
+    - `safeParse`, which rejects arrays and filters each entry into an
+      `Object.create(null)` map;
+    - `acknowledge` now changes status only from `active`;
+    - a docstring with the transition table;
+  - `tests/triage-overlay.test.ts`.
+- The only other file in `5cd8dd7..a33854c` is this report (run 1's
+  commits). The builder did not touch it: `git diff 44523a9 a33854c` does
+  not list it.
+- No route, middleware, session, handoff, schema DDL or package file changed.
+  The guard's SQL is byte-identical.
+- The reworded guard comments now match what run 1 measured: `status` and
+  `assigned_to` only, no row inserts or deletes, and a defense against direct
+  tampering rather than a stale-container repair.
+
+### Layer 1
+
+- `npx vitest run`: 17 files, **99 tests** passed.
+- `tsc --noEmit`: exit 0.
+- `npm run lint`: clean.
+- Image build: compiled with no warnings.
+
+### (1) B1: the full transition table in real Chromium (`transitions.log`)
+
+Each cell below ran in a **fresh browser context** against a seed anomaly in
+that status. Each was checked in three ways:
+- the panel badge right after the action;
+- the badge after a reload;
+- whether Acknowledge is enabled afterwards.
+
+For a disabled Acknowledge, the harness also fired a forced DOM `click()` on
+the disabled button.
+
+| From \ action | acknowledge | assign (Sofia) | false positive |
+|---|---|---|---|
+| Active | Acknowledged (button enabled) | Acknowledged + Sofia | False positive |
+| Acknowledged | Acknowledged (button disabled, forced click no-op) | Acknowledged + Sofia | False positive |
+| Resolved | **Resolved** (button disabled, forced click no-op) | **Resolved** + Sofia | False positive |
+| False positive | **False positive** (button disabled, forced click no-op) | **False positive** + Sofia | False positive (button disabled) |
+
+- **Results:** 12 of 12 PASS. Every outcome persisted after a reload, with 0
+  console or page errors. Acknowledge is enabled only when the status is
+  Active.
+- **Never goes back:** neither False positive nor Resolved can ever return to
+  Active or Acknowledged.
+- **Resolved to False positive is allowed.** That matches the documented
+  table ("false_positive from any status"). It is not a move backwards.
+- **Chains:**
+  - **CH-1:** Active, acknowledge, FP, assign Tom, reload. The trail read
+    `Active > Acknowledged > False positive > False positive > False positive`,
+    Acknowledge was disabled, and the stored entry was FP with `u-tom`.
+  - **CH-2:** the log read "2 active" afterwards.
+  - **CH-3:** an overlay entry marking a seed-Active anomaly as `resolved`
+    disables Acknowledge, because the overlay status wins.
+- The run 1 regression checks agreed:
+  - F-1 now passes (after False positive, Acknowledge is disabled);
+  - the Resolved probe shows Acknowledge disabled.
+
+### (2) B2: malformed storage (`headless.log` C-block, `transitions.log` CS-block)
+
+- **All 16 run-1 shapes pass**, including `assigneeName-object`, which crashed
+  in run 1. For each shape:
+  - the log, panel, overview and metric detail all render, with 23 rows and
+    0 page errors;
+  - every invalid entry is **ignored**: the target row renders as its seed
+    `Active`.
+- **One deliberate exception:** `updatedAt-bad` has the right types (a
+  `status` from the enum, and `updatedAt` a string that is not a date), so it
+  is kept by design. It renders Acknowledged, and `relativeTime` handles the
+  NaN.
+- **Extra shapes, 11 of 11 PASS.** All render with 0 errors, and
+  `Object.prototype` was checked unpolluted after each.
+
+  | Shape | Target renders |
+  |---|---|
+  | `constructor` key holding an entry, next to a valid target entry | valid entry applies |
+  | `constructor.prototype.status` | ignored |
+  | `__proto__` key holding a valid entry, next to a valid target | valid entry applies |
+  | a nested `__proto__` inside an entry | entry kept, no pollution |
+  | 2 MB `assigneeName` string | valid, renders |
+  | 700 KB `status` string | not in the enum, ignored |
+  | `status` in the wrong case (`False_Positive`) | ignored |
+  | numeric `assignedTo` | ignored |
+  | missing `updatedAt` | ignored |
+  | extra unknown keys on a valid entry | tolerated, applies |
+  | valid and invalid entries mixed | see below |
+
+- **Mixed valid and invalid:** the valid sibling applies (the NPS row shows
+  False positive), and the invalid ones are ignored. After the next triage
+  click they are **purged** from storage: the stored keys become exactly the
+  two valid ids.
+
+### (3) Regression pass
+
+- **Attack sweep:** 10,106 requests, the same `sweep.mjs` as run 1. The
+  outcome table matches run 1 **line for line, counts included** (`diff` is
+  empty). The full-table SHA-256 read `b709aced…` before the sweep, after
+  it, and after every browser run. The WAL was 0 bytes at the end.
+- **Headless harness:** the run-1 script, with the S-5 harness bug fixed
+  (it now sends raw bytes), passed **49 of 49**:
+  - isolation, I-1..I-7: visitor B and fresh context C see only seed rows;
+  - persistence, P-1 and P-2;
+  - no-reload updates and tab sync, U-5, U-8, U-10, U-11, X-1..X-5;
+  - mobile, M-1;
+  - session and handoff, S-1..S-6, with S-5 now measured as 400/401/401.
+- **Seed guard** (`seedguard.log`), on the 4 mutations from run 1 (NULL to
+  value, value to NULL, status, both):
+  - drift 4 after the mutations;
+  - the log shows "restored 4 anomaly row(s)" after a restart;
+  - the hash returned **exactly** to the seed `b709aced…`;
+  - the `IS NOT` truth table was re-checked (1, 1, 0).
+- **Repo assertions:** 35 PASS, 1 FAIL, 2 N/A, 2 SKIP, the same as run 1. The
+  FAIL is the stale `home.yml` footer string, which is not a PR #35 claim and
+  also fails on `main`.
+
+### Theater Check (run 2)
+
+| Claim at a33854c | Verification found | Verdict |
+|---|---|---|
+| B1: acknowledge only moves active to acknowledged; the button is disabled otherwise | 12-cell browser table, 3 chains, and forced clicks on the disabled button; FP and Resolved never go back | CONFIRMED |
+| B2: `isValidOverlayEntry` filters every entry (status enum, string-or-null names, string `updatedAt`) into an `Object.create(null)` map | 27 malformed shapes in total, including `__proto__`, `constructor` and huge values; 0 crashes; invalid entries ignored and purged on the next write; no prototype pollution | CONFIRMED |
+| Seed-guard, Dockerfile and `decisions.md` comments reworded | They now state `status`/`assigned_to` only, no inserts or deletes, and a tamper defense rather than a stale-container fix. That matches the run-1 measurements | CONFIRMED |
+| 99 tests | 17 files / 99 tests | CONFIRMED |
+| Nothing else changed | The diff review shows only the files above | CONFIRMED |
+| All run-1 claims that held (no shared writes, 401/404/400, isolation, `anomaly-actions.ts` deleted, symmetric guard, session and handoff unchanged) | Re-measured above, identical to run 1 | CONFIRMED |
+
+### Still open (none of these are PR #35 claims)
+
+- **The CI gate is not per-PR.** It greps every report for the PASS marker.
+  This report's verdict line will now satisfy it for any later tier-3 PR once
+  it is on `main`.
+  - Fix: check only line 3, and require `pr<N>` in the filename.
+  - Tier: Sonnet.
+- **`POST /api/alerts/slack` needs no session** (pre-existing).
+  - Tier: Sonnet.
+- **Cross-tab read-modify-write can lose an update** under synthetic
+  interleaving: 115 of 200 keys this run. It only affects that visitor's own
+  triage.
+  - Tier: Haiku, or accept it.
+- **Stale descriptions remain:**
+  - the `tier_map.yml` `anomaly-detail-panel` reason still names the POST
+    status route as the triage path;
+  - `home.yml` has the footer string;
+  - `anomaly-detail.yml` expects 200 where `smoke.yml` expects 404.
+  - Tier: Haiku.
+- **Panel refetch on every triage click** (pre-existing, inline `onClose`).
+  - Tier: Haiku.
+- **Coverage gaps:** headed Chrome, the adversarial generator, axe, and a
+  valid-token handoff were not run.
+
+Run 2 artifacts:
+`C:\Users\Drama\AppData\Local\Temp\claude\C--dev\c411ea0d-b7a5-4294-9c55-34d74f91e960\scratchpad\verify-runs\pr35-r2\`.
+It contains:
+- `build.log` and `l1-*.log`;
+- `sweep.log` and `a-hash-0.json`, `a-hash-1.json`, `a-hash-2.json`;
+- `seedguard.log`;
+- `headless.mjs` and `headless.log`;
+- `transitions.mjs` and `transitions.log`;
+- `assertions.log`;
+- `container-logs/`.
+
+---
+
+## History: run 1 on 5cd8dd7 (verdict FAIL, superseded by run 2)
 
 The Tier-3 fix itself holds. No HTTP request of any kind can change the
 `anomalies` rows another visitor sees:
@@ -356,12 +561,12 @@ Tally: {"PASS":35,"FAIL":1,"N/A":2,"SKIP":2}
 | typecheck, test (17/94), lint, build all green | Reproduced exactly | CONFIRMED |
 | (Brief) Portal handoff and session unchanged | Files untouched by the diff; runtime S-1..S-6 (with S-5 corrected by curl) | CONFIRMED (valid-token handoff not exercised) |
 
-## 4. Blockers
+## 4. Blockers (run 1; both RESOLVED in a33854c, see section 0)
 
 Neither blocker is a shared-state defect. Both block a PASS only because the
 gate's rule is that every claim must hold.
 
-### B1. "Forward-only" triage is not forward-only
+### B1. "Forward-only" triage is not forward-only (RESOLVED in a33854c)
 
 - **Evidence:** F-1 and the follow-up probes. In a fresh browser, a seed
   `false_positive` becomes `acknowledged` on one click, and a `resolved`
@@ -379,7 +584,7 @@ gate's rule is that every claim must hold.
     PR body, the docstring and `decisions.md`.
 - **Agent tier:** Sonnet (one pure function, one prop and one test).
 
-### B2. A wrong-schema overlay entry crashes the anomaly log
+### B2. A wrong-schema overlay entry crashes the anomaly log (RESOLVED in a33854c)
 
 - **Evidence:** C-assigneeName-object and `crash-assigneeName-object.png`.
   React #31 on `/app/anomalies`, in both the table and the panel. It survives
