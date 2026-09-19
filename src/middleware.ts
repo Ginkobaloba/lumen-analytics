@@ -1,16 +1,27 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { LUMEN_SESSION_COOKIE, verifyLumenSession } from "@/lib/portal-session";
 
-export const SESSION_COOKIE = "lumen_demo_session";
-
-/** The /app surface requires the demo session cookie set by /api/session.
-    Same pattern as AxlePoint: no credentials anywhere, the cookie just
-    makes the demo read like a signed-in product. */
-export function middleware(request: NextRequest) {
-  if (!request.cookies.has(SESSION_COOKIE)) {
+/**
+ * The /app surface requires a VALID signed session, not just a cookie named
+ * lumen_demo_session. The cookie is an HS256 JWT minted by /api/session
+ * (demo sign-in) or /api/portal/handoff (Portal launch); it is verified here
+ * with jose in the Edge runtime. Anything else (no cookie, forged, tampered,
+ * expired, alg-none, the old unsigned "demo-user" literal, or an unusable
+ * SESSION_SECRET) redirects to the landing page and clears the bad cookie.
+ */
+export async function middleware(request: NextRequest) {
+  const session = await verifyLumenSession(
+    request.cookies.get(LUMEN_SESSION_COOKIE)?.value,
+  );
+  if (!session) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     url.search = "?signin=required";
-    return NextResponse.redirect(url);
+    const response = NextResponse.redirect(url);
+    if (request.cookies.has(LUMEN_SESSION_COOKIE)) {
+      response.cookies.delete(LUMEN_SESSION_COOKIE);
+    }
+    return response;
   }
   return NextResponse.next();
 }

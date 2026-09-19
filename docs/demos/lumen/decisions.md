@@ -137,3 +137,76 @@ recovering an already-running container's mutated state; the deployed
 container mounts no volume, so that scenario can't reach the new code.
 The guard is defense-in-depth against direct DB tampering, and only
 `status`/`assigned_to` (not other columns, inserts, or deletes).
+
+## 2026-09-19: Real signed demo session; per-client Slack alert limit (L1, L4, W8)
+
+**L1, the demo session gate was decorative.** `src/middleware.ts` only
+checked that a `lumen_demo_session` cookie existed, `/api/session` set it
+to the literal `demo-user`, and `verifyLumenSession` was only ever called
+from a test. Any cookie value opened `/app`, `POST /api/alerts/slack` and
+`POST /api/anomalies/[id]/status`. Fix:
+
+- One session format for both sign-in paths (`src/lib/portal-session.ts`,
+  Edge-safe): an HS256 JWT signed with `SESSION_SECRET`, carrying `jti`
+  (random UUID per mint), `iat`, `exp` (1h TTL, cookie `expires` matches),
+  `iss=lumen-analytics`, `aud=lumen-session`, `sub`, and
+  `src` (`demo` or `portal`). `/api/session` mints the demo one;
+  `/api/portal/handoff` still mints its own after verifying the portal
+  token. The demo session went from a 24h cookie to 1h, matching the
+  portal path; an idle visitor just clicks Sign in again.
+- Verification pins `alg` to HS256 and requires `sub`, `jti`, `iat`, `exp`,
+  the issuer and audience, a known `src`, and a token age within the TTL.
+  That rejects forged (other key), tampered, expired, alg-none, HS512,
+  jti-less and the old unsigned `demo-user` values.
+- `middleware.ts` verifies with jose in the Edge runtime and redirects
+  (clearing the bad cookie) on any failure. `/api/alerts/slack` and the
+  anomalies status route use `readRequestSession`: validity, not presence.
+- Fail closed, matching the handoff's existing behavior: with
+  `SESSION_SECRET` missing or under 32 characters nothing mints (sign-in
+  and handoff answer 500 `misconfigured`), nothing verifies (`/app`
+  redirects), and the session-required API routes answer 500
+  `misconfigured` rather than a 401 that would hide an operator error.
+  **Deploy consequence:** sign-in used to work with no secret at all; now
+  the deploy env must carry `SESSION_SECRET` or the live demo is locked.
+- Not changed: the landing page's "signed in" button state still keys on
+  cookie presence. It grants nothing; a stale cookie is cleared by the
+  middleware on the first `/app` hit.
+
+**L4, portal handoff replay: not built, blocked on the portal.** The
+finding asked for an in-memory used-`jti` set (TTL = token `exp`) for
+portal handoff tokens, only if the portal mints a `jti`. It does not:
+portal-shell `mintAccessToken` (`src/lib/jwt-signing.ts`, the only mint
+path, used by `/api/portal/launch/[slug]`) sets iss, aud, sub, iat, exp,
+customer_id, role and portal_role, and no `jti`; the gate contract
+doesn't promise one either. So a captured `#portal_token` fragment
+replays against `/api/portal/handoff` until its 60-minute `exp`. Keying
+the set on a hash of the whole token was considered and left out of this
+change: it is a different design than the finding specifies, and the
+right fix is one line in the portal (`.setJti(crypto.randomUUID())`),
+after which Lumen adds the used-jti set with verification requiring
+`jti`.
+
+**W8, the Slack alert limiter was global only.** One anonymous client
+could burn everyone's 5-per-minute window. `src/lib/alert-rate-limit.ts`
+now enforces two sliding 60s windows:
+
+- global: 5 calls, kept as the ceiling;
+- per client: 2 calls, keyed on `CF-Connecting-IP`. Cloudflare sets that
+  header on every tunneled request and overwrites a client-supplied one.
+  `X-Forwarded-For` and `X-Real-IP` are never read. An absent, empty,
+  oversized (over 45 chars) or non-IP value means global limit only.
+- A call is recorded in both windows only when both admit it, so a
+  client-limited call never burns global budget and vice versa. The
+  session check runs first, so unauthenticated calls consume nothing.
+- Bounded: expired client entries are pruned on every call, and since
+  only admitted calls are recorded, at most 5 keys are live at once.
+  A hard cap of 1000 keys with oldest-first eviction is defense in depth.
+
+Known limit: a caller that reaches the container directly (not through
+the tunnel) can set `CF-Connecting-IP` freely and rotate it; the global
+ceiling is the backstop there, which is the pre-existing behavior.
+
+Tests: `tests/middleware-session.test.ts`, `tests/slack-route.test.ts`,
+`tests/alert-rate-limit.test.ts`, `tests/anomaly-status-route.test.ts`,
+`tests/portal-handoff.test.ts`, `tests/session-redirect.test.ts`; hostile
+cookie fixtures in `tests/helpers/session-tokens.ts`.

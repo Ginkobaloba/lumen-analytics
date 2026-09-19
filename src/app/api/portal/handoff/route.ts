@@ -25,8 +25,16 @@ import {
  * then return 200 with the verified subject and a path to redirect to. The
  * client then navigates to /app.
  *
- * The cookie-only "/api/session" sign-in shortcut stays in place for now;
- * both paths converge on the same `lumen_demo_session` cookie.
+ * The one-click "/api/session" demo sign-in stays in place; both paths mint
+ * the same kind of signed session (src/lib/portal-session.ts) into the same
+ * `lumen_demo_session` cookie, and the middleware verifies either one.
+ *
+ * Replay: the portal token is meant to be single-use handoff material, but
+ * the portal does not currently mint a `jti` (portal-shell
+ * src/lib/jwt-signing.ts, mintAccessToken), so this route has no stable id
+ * to remember. A captured `#portal_token` fragment replays until its `exp`.
+ * See docs/demos/lumen/decisions.md (2026-09-19, real demo session) for the
+ * follow-up: once the portal sets a jti, add a used-jti set here.
  */
 
 export const dynamic = "force-dynamic";

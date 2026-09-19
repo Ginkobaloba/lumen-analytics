@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildSlackPayload, sendSlackAlert, type SlackAlertInput } from "@/lib/alerting";
 import { getAnomalyDetail } from "@/lib/anomaly-detail";
-import { SESSION_COOKIE } from "@/middleware";
+import { AlertRateLimiter, clientKeyFromHeaders } from "@/lib/alert-rate-limit";
+import { readRequestSession } from "@/lib/portal-session";
 
 export const dynamic = "force-dynamic";
 
@@ -12,39 +13,24 @@ export const dynamic = "force-dynamic";
   payload so the UI can show exactly what was sent, configured or not.
 */
 
-// In-memory rate limit: one global window across all callers. Keying on a
-// client-supplied header (X-Forwarded-For, X-Real-IP) is not trustworthy --
-// a caller can rotate it to get a fresh bucket on every request -- so this
-// limits the route as a whole instead of per claimed client.
-const requestHistory: number[] = [];
-const RATE_LIMIT_REQUESTS = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 60 seconds
-
-function isRateLimited(): boolean {
-  const now = Date.now();
-
-  // Remove old timestamps outside the window
-  while (requestHistory.length > 0 && now - requestHistory[0] >= RATE_LIMIT_WINDOW_MS) {
-    requestHistory.shift();
-  }
-
-  if (requestHistory.length >= RATE_LIMIT_REQUESTS) {
-    return true;
-  }
-
-  // Record this request
-  requestHistory.push(now);
-  return false;
-}
+// In-memory rate limit: a global 5-per-minute ceiling plus a 2-per-minute
+// window per client keyed on CF-Connecting-IP (set by Cloudflare, never
+// X-Forwarded-For). No CF-Connecting-IP means global limit only. See
+// src/lib/alert-rate-limit.ts. Module-level so it spans requests.
+const limiter = new AlertRateLimiter();
 
 export async function POST(request: NextRequest) {
-  // Require session cookie
-  if (!request.cookies.has(SESSION_COOKIE)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Require a VALID signed session (verified, not just present). Checked
+  // before the limiter so unauthenticated calls never consume budget.
+  const auth = await readRequestSession(request);
+  if (!auth.ok) {
+    return auth.reason === "misconfigured"
+      ? NextResponse.json({ error: "misconfigured" }, { status: 500 })
+      : NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // Check rate limit (global, not keyed on a client-supplied header)
-  if (isRateLimited()) {
+  // Per-client (CF-Connecting-IP) and global windows, both enforced.
+  if (limiter.check(clientKeyFromHeaders(request.headers)).limited) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 

@@ -1,14 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { openDb } from "@/lib/db";
+import { readRequestSession } from "@/lib/portal-session";
 
 export const dynamic = "force-dynamic";
-
-// Mirrors the cookie name in src/middleware.ts (SESSION_COOKIE) and
-// src/lib/portal-session.ts (LUMEN_SESSION_COOKIE). Duplicated here on
-// purpose rather than imported, so this fix doesn't reach into those
-// files while another agent is editing session/portal-handoff code in
-// parallel.
-const SESSION_COOKIE = "lumen_demo_session";
 
 /*
   Anomaly triage moved client-side (M1 fix, 2026-09-19; per the
@@ -21,8 +15,9 @@ const SESSION_COOKIE = "lumen_demo_session";
   unauthenticated POST here used to let any visitor or scanner dismiss
   the demo's anomaly story for every later visitor.
 
-  The route still exists for two reasons: it 401s without the demo
-  session cookie the same way /app/* does (a cheap scanner filter), and
+  The route still exists for two reasons: it 401s without a valid signed
+  demo session the same way /app/* does (verified, not just present; 500
+  "misconfigured" when SESSION_SECRET is unusable), and
   it gives an old client build that still POSTs here a clear response
   instead of a 404, without ever touching shared state.
 */
@@ -30,8 +25,11 @@ export async function POST(
   request: NextRequest,
   props: { params: Promise<{ id: string }> },
 ) {
-  if (!request.cookies.has(SESSION_COOKIE)) {
-    return NextResponse.json({ error: "Session required" }, { status: 401 });
+  const auth = await readRequestSession(request);
+  if (!auth.ok) {
+    return auth.reason === "misconfigured"
+      ? NextResponse.json({ error: "misconfigured" }, { status: 500 })
+      : NextResponse.json({ error: "Session required" }, { status: 401 });
   }
 
   const params = await props.params;
