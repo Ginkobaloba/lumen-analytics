@@ -1,7 +1,232 @@
 # Deep Verify: PR #37 harden routes and headers (2026-09-19)
 
-Overall: FAIL
-Tested-SHA: 12126df7faaf681af36089476e1b856134ef22b8
+Overall: PASS
+Tested-SHA: 0497749c11bf65802fa52638fec78f0266659b42
+
+This report covers two runs on the same day:
+- **Run 1**, on `12126df`, came out FAIL on two blockers:
+  - B1: the rate limit could be bypassed with XFF rotation;
+  - B2: the yq sha256 step never verified anything and broke CI.
+- **Run 2** is the re-verify on `0497749`, which fixes both, along with W1,
+  W2, W4 and W5. Every claim held, so the verdict above is for `0497749`.
+- Run 1's findings are kept below as history.
+
+## 0. Re-verify on 0497749 (run 2)
+
+### Scope and environment
+
+- **Target:** `chore/harden-routes-headers` at `0497749`, whose parent is
+  `9136aff` (run 1's report commit on top of `12126df`). The worktree was
+  pulled with `git pull --ff-only`.
+- **Image:** a fresh image, `demo-lumen:dv37r2`, built with `--no-cache` from
+  the clean worktree at `0497749`:
+  - the same temporary-npmrc handling as run 1;
+  - the npmrc was deleted right after the build;
+  - the build log carries 0 token-shaped strings;
+  - `next build` compiled successfully.
+- **Containers:** the same throwaway layout and throwaway env as run 1, on
+  `dvl37-net`, with freshly minted RS256 portal tokens:
+
+  | Container | Port | Role |
+  |---|---|---|
+  | `dvl37-app` | 18821 | main target |
+  | `dvl37-appfail` | 18822 | webhook host that does not resolve |
+  | `dvl37-proxy` | 18823 | nginx replica of the live proxy headers |
+  | `dvl37-nocfg` | 18824 | no `PORTAL_*` env |
+  | `dvl37-nosecret` | 18825 | no `SESSION_SECRET` |
+  | `dvl37-sink` | 18829 | webhook and JWKS sink that counts deliveries |
+
+  All ports are on 127.0.0.1.
+- **Untouched:** the live container, the public URL, the demo-proxy and
+  cloudflare-config. Nothing reached Slack or the real portal.
+- **Mode:** as in run 1: QUICK+EDGE (DEEP REQUESTED, LAYER 5 NOT RUN), with
+  no adversarial generator.
+
+### (5) Diff review: `12126df..0497749`
+
+- `git diff --stat 12126df 0497749` changes 8 files. One of them is this
+  report, from run 1's commit `9136aff`; the builder did not touch it
+  (`git diff 9136aff 0497749 -- verify/reports` is empty).
+- **`slack/route.ts`:**
+  - The per-IP `Map` and `getClientIp` are gone.
+  - The limiter is one module-level `number[]`: old timestamps are dropped
+    with `shift()`, and the call is refused once 5 fall inside 60 s.
+  - The check runs synchronously before any `await`, so concurrent calls
+    cannot race it (R5 confirms this).
+  - No header is read for limiting.
+- **`handoff/route.ts`:** `console.error("[portal/handoff] misconfigured:",
+  err)` in both catch blocks. The response bodies are unchanged.
+- **`settings/page.tsx`:** `lumenanalytics.io/app` becomes
+  `lumen.example/app`.
+- **`anomaly-panel.tsx`:** a 429 branch shows "Rate limited, try again in a
+  minute." in the moderate color.
+- **`verify.yml`:**
+  - the checksums download and `grep` are removed;
+  - `YQ_SHA256="a2c09718...13e9ed7"` is checked with `echo "<hash>
+    /usr/local/bin/yq" | sha256sum -c -`.
+- **`package-lock.json`:** `git diff origin/main 0497749 --
+  package-lock.json` prints nothing.
+- **`tests/slack-route.test.ts`:** one new test, "returns 429 on the 6th call
+  even when X-Forwarded-For rotates on every call".
+  - **Mutation check:** with the old `12126df` `route.ts` swapped in
+    temporarily, this test fails (1 failed, 2 passed).
+  - The file was restored with `git checkout HEAD --`, and `git status` was
+    clean afterwards.
+
+### Layer 1
+
+- `npm run verify` exited 0: 15 files and **85 tests** passed, with no ESLint
+  warnings or errors.
+- **CI at `0497749` (run 35461534756):**
+  - **Quick Verify passes.** The log shows `/usr/local/bin/yq: OK`.
+  - Deep Verify failed only because the committed report still read FAIL.
+    That is the expected state before this re-verify.
+
+### (1) B1: the global rate limit (`r2/slack-direct.txt`, `r2/slack-proxy.txt`, `r2/slack-extra.txt`)
+
+| Run | Setup | Result | Sink deliveries |
+|---|---|---|---|
+| R1 | no cookie | 401 | 0 |
+| R2 | direct, 20 calls, a new `X-Forwarded-For` on each, arbitrary cookie | calls 1 to 5 got 200; **calls 6 to 20 got 429** | **5** |
+| R3 | same window, rotating `X-Real-IP` and XFF together | 429, 429, 429 | 0 |
+| R4 | fresh process, **through the nginx replica**, 15 calls with `X-Forwarded-For: 198.51.100.N, 203.0.113.7` | calls 1 to 5 got 200; **calls 6 to 15 got 429** | **5** |
+| R5 | fresh process, 30 **concurrent** calls with distinct XFF values | 5 got 200, 25 got 429 | **5** |
+| R6 | 61 s later | 200 (the window resets) | |
+
+So, in every path, the 6th call in a window got 429 and at most 5 POSTs
+reached the sink per window.
+
+### (2) B2: the pinned yq hash (`r2/yq-step.txt`)
+
+- A fresh download of the v4.44.3 `yq_linux_amd64` hashes to
+  `a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7`. That is
+  the pinned value.
+- The step's command was run in a `node:20-bookworm-slim` container:
+
+  | Binary | Hash | Result |
+  |---|---|---|
+  | real | pinned | `OK`, exit 0 |
+  | tampered (1 byte appended) | pinned | `FAILED`, exit 1 |
+  | real | a wrong hash (all zeros) | `FAILED`, exit 1 |
+  | tampered, under `bash -e` like Actions | pinned | the step exits 1 before reaching `chmod` |
+
+- CI Quick Verify is green (see Layer 1).
+
+### (3) W1, W2, W4 and W5
+
+- **W1:** in headless Chromium, clicks 1 to 5 read "Delivered to
+  dvl37-sink:8080 (HTTP 200)." Click 6 got 429 and read **"Rate limited, try
+  again in a minute."** Confirmed.
+- **W2:** both misconfigured containers still return 500
+  `{"error":"misconfigured"}` with nothing more in the body. The container
+  logs now carry the reason, naming the missing variables but no values:
+  - `[portal/handoff] misconfigured: Error: Portal federation env vars
+    missing: PORTAL_JWKS_URL, PORTAL_EXPECTED_ISSUER, PORTAL_EXPECTED_AUD`;
+  - `[portal/handoff] misconfigured: Error: SESSION_SECRET must be set to a
+    value of at least 32 characters`.
+
+  Confirmed.
+- **W4:** `/app/settings` renders `lumen.example/app` twice and
+  `lumenanalytics.io` 0 times. `git grep lumenanalytics.io 0497749` (outside
+  this report) finds nothing. Confirmed.
+- **W5:** `git diff origin/main 0497749 -- package-lock.json` is empty.
+  Confirmed.
+
+### (4) Regression: attacks B, C and F from run 1
+
+- **B, handoff shape:** `portal-token-claim.tsx` is unchanged by the fix and
+  the handoff bodies are unchanged. In the browser:
+  - a valid fragment token lands on `/app` with a cookie set, and the
+    fragment is scrubbed;
+  - a token signed with the wrong key shows the fallback banner, sets no
+    cookie, and scrubs the fragment.
+
+  portal-shell is unchanged since run 1.
+- **C, framing:**
+  - a cross-origin parent gets `chrome-error://chromewebdata/` in the frame
+    (blocked);
+  - a same-origin parent loads `/`.
+
+  XFO and CSP appear on a page, a 307, `/api/team` and `/_next/static`, and
+  there is no `X-Powered-By`.
+- **F, flows:**
+  - Sign-in gives a `Secure; HttpOnly; SameSite=lax` cookie and lands on
+    `/app`.
+  - Triage: 23 rows, and Acknowledge returned 200.
+  - Sign-out returns 303, and `/app` then redirects to `/?signin=required`.
+  - `GET /api/session` returns 405.
+  - Handoff:
+
+    | Case | Response |
+    |---|---|
+    | invalid JSON | 400 |
+    | empty token | 401 |
+    | wrong `aud` | 401 |
+    | wrong `iss` | 401 |
+    | expired | 401 |
+    | wrong key | 401 |
+    | valid | 200 with a Secure JWT cookie |
+
+  - With a webhook host that does not resolve, the response says "delivery
+    failed".
+  - The only console errors were the expected 429 and 401 resource lines.
+- **Repo smoke:** `quick_smoke.sh verify/smoke.yml` against `dvl37-app` got
+  10 ok and 1 FAIL, the same as run 1. The FAIL is HSTS, which the Cloudflare
+  edge adds (N/A locally).
+
+### Theater Check (run 2)
+
+| Claim at 0497749 | Verification found | Verdict |
+|---|---|---|
+| B1: one global window, 5 per 60 s, with the per-IP map removed | R2 to R6: the 6th call gets 429 whatever the headers, directly, through the proxy and under 30-way concurrency; 5 deliveries per window; the window resets | CONFIRMED |
+| B2: yq SHA-256 hard-coded, and Quick Verify green | Good binary OK; tampered binary and wrong hash both exit 1; CI log shows `yq: OK` | CONFIRMED |
+| W1: a 429 shows a rate-limit message | Browser click 6 reads "Rate limited, try again in a minute." | CONFIRMED |
+| W2: `console.error` in both misconfig catches | Both reasons appear in the container logs, and the bodies stay generic | CONFIRMED |
+| W4: `lumen.example/app` | Rendered; no `lumenanalytics.io` left in the tree | CONFIRMED |
+| W5: lockfile byte-identical to main | Empty diff | CONFIRMED |
+| 85 tests | 15 files, 85 tests; the new test catches the old code | CONFIRMED |
+| All other run-1 claims (401, "delivery failed", Secure cookie, generic handoff errors, headers, emails) | Re-measured above, same as run 1 | CONFIRMED |
+
+### Still open (none of these block this PR)
+
+- **The global window can be drained by anyone (new W8).** Requests with
+  invalid JSON use up the budget too: after 5 `junk` bodies, a real request
+  got 429 (R7). Combined with the presence-only cookie check (any value
+  passes), one anonymous client sending about 5 requests a minute can keep
+  Send to Slack at 429 for every visitor.
+  - This is the direct cost of the global limit the spec asked for. It
+    trades availability of the demo button for a hard cap on webhook
+    traffic, and cannot be abused beyond 5 deliveries a minute.
+  - Fix, if wanted: count only requests that reach the send (after body and
+    id validation). That is cheap, but a valid body can still drain the
+    budget, so the design tradeoff stays.
+  - Tier: Haiku, or accept it.
+- **The Slack 401 only checks that the cookie exists.** Validating its value
+  would add little, because `POST /api/session` hands the demo cookie to
+  anyone.
+  - Tier: accept it, or Sonnet if the session becomes real.
+- **W6 (from run 1):** `frame-ancestors 'self'` would block a future portal
+  iframe tile. Today the portal uses `shape: subdomain`, and the live Neon row
+  was not read.
+  - Tier: Haiku, when needed.
+- **W7 (from run 1):** the CI deep gate greps every report for a PASS marker
+  rather than one for this PR.
+  - Tier: Sonnet.
+
+Run 2 artifacts are in
+`C:\Users\Drama\AppData\Local\Temp\claude\C--dev\c411ea0d-b7a5-4294-9c55-34d74f91e960\scratchpad\verify-runs\lumen-pr37-deep\r2\`:
+- `build.log` and `npm-verify.txt`;
+- `mutation.txt`;
+- `slack-direct.txt`, `slack-proxy.txt` and `slack-extra.txt`;
+- `yq-step.txt`;
+- `auth-headers.txt`;
+- `headless.txt` and `framing.txt`;
+- `assertions.txt`;
+- screenshots `f1-*.png`, `f3-*.png` and `f5-*.png`.
+
+---
+
+## History: run 1 on 12126df (verdict FAIL, superseded by run 2)
 
 Most of the hardening holds. These all behave as claimed:
 - the Secure session cookie;
@@ -31,7 +256,7 @@ The verdict is FAIL because two claims do not hold:
    - Deep Verify (`needs: quick-verify`) is skipped, so the tier-3 gate
      cannot run at all.
 
-## 1. Target and scope
+### Run 1, 1. Target and scope
 
 - **Target:** `Ginkobaloba/lumen-analytics` PR #37, branch
   `chore/harden-routes-headers`, head `12126df`. Its parent is `origin/main`
@@ -79,7 +304,7 @@ The verdict is FAIL because two claims do not hold:
 - **Cleanup:** all `dvl37-*` containers, `dvl37-net` and the `dv37` image were
   removed after this report was written.
 
-## 2. Results by category
+### Run 1, 2. Results by category
 
 | Category | Result | Evidence |
 |---|---|---|
@@ -97,7 +322,7 @@ The verdict is FAIL because two claims do not hold:
 | visual_regression | SKIP | No baseline |
 | cross_browser | SKIP | Chromium only; layer 5 not run |
 
-### Layer 1: code
+#### Run 1: Layer 1: code
 
 - `npm run verify` in the worktree exited 0:
   - typecheck, 15 test files and **84 tests** passed;
@@ -111,7 +336,7 @@ The verdict is FAIL because two claims do not hold:
   drops the `libc` fields from 20 optional native packages (sharp and others).
   That is npm-version churn and the PR body does not mention it (W5).
 
-### Attack A: the rate limit and X-Forwarded-For (`slack-direct.txt`, `slack-proxy.txt`)
+#### Run 1: Attack A: the rate limit and X-Forwarded-For (`slack-direct.txt`, `slack-proxy.txt`)
 
 The key is `getClientIp()`: the first comma-separated entry of
 `x-forwarded-for`, else `x-real-ip`, else `"unknown"`.
@@ -154,7 +379,7 @@ with no `real_ip` module in the live conf.d or `nginx.conf`):
 **Side effect:** `requestHistory` is an unbounded `Map`. Each spoofed key adds
 an entry that is never evicted (W3).
 
-### Attack B: consumers of the handoff error shape
+#### Run 1: Attack B: consumers of the handoff error shape
 
 - **In this repo:** `src/components/portal-token-claim.tsx` is the only
   client. `claim()` throws on `!res.ok` before it parses the body, so an error
@@ -173,7 +398,7 @@ an entry that is never evicted (W3).
     scrubs the fragment.
 - **Verdict: nothing breaks.**
 
-### Attack C: framing
+#### Run 1: Attack C: framing
 
 - **portal-shell:**
   - `apps/manifests/lumen-analytics.json` has `"shape": "subdomain"`.
@@ -189,7 +414,7 @@ an entry that is never evicted (W3).
   - A same-origin parent loads `http://127.0.0.1:18821/` in the frame.
 - **Lumen itself:** `src/` and `public/` contain no iframes.
 
-### Attack D: the yq sha256 step (`yq-step.txt`)
+#### Run 1: Attack D: the yq sha256 step (`yq-step.txt`)
 
 The step was reproduced verbatim in a `node:20-bookworm-slim` container
 against the real v4.44.3 `checksums` file:
@@ -208,7 +433,7 @@ against the real v4.44.3 `checksums` file:
 - The step as written cannot tell a good binary from a bad one, and it fails
   on every run.
 
-### Attack E: real-looking domains
+#### Run 1: Attack E: real-looking domains
 
 - **Emails:** all 8 catalog emails are now `@lumen.example`. The container DB
   `users` table has all 8 as `@lumen.example`, and `/app/settings` renders
@@ -219,7 +444,7 @@ against the real v4.44.3 `checksums` file:
   register it (W4).
 - The other test domains are `example.com`.
 
-### Attack F: regression (`headless.txt`, `auth-paths.txt`, `misconfig.txt`)
+#### Run 1: Attack F: regression (`headless.txt`, `auth-paths.txt`, `misconfig.txt`)
 
 **Browser flows:**
 
@@ -253,7 +478,7 @@ LUMEN_SLACK_WEBHOOK_URL)" (W1).
 - The Slack route still returns 400 for invalid JSON and 404 for an unknown
   id.
 
-## 3. Edge cases attempted
+### Run 1, 3. Edge cases attempted
 
 | Case | Result |
 |---|---|
@@ -266,7 +491,7 @@ LUMEN_SLACK_WEBHOOK_URL)" (W1).
 | Same-origin framing | allowed |
 | Handoff with 4 bad-token variants and 2 misconfigurations | all fail closed with generic bodies |
 
-## 4. Theater Check
+### Run 1, 4. Theater Check
 
 | PR claim | Verification found | Verdict |
 |---|---|---|
@@ -283,7 +508,7 @@ LUMEN_SLACK_WEBHOOK_URL)" (W1).
 | No real-looking domain remains (audit L7 intent) | `lumenanalytics.io/app` in settings; NXDOMAIN | NOT CONFIRMED (see W4) |
 | 84 tests pass; build succeeds | 84 of 84; image build exit 0 | CONFIRMED |
 
-## 5. Blockers
+### Run 1, 5. Blockers
 
 - **B1. The rate limit can be bypassed, and the cookie gate can be forged.**
   - Fix:
@@ -300,7 +525,7 @@ LUMEN_SLACK_WEBHOOK_URL)" (W1).
     `a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7`.
   - Tier: Haiku.
 
-## 6. Warnings
+### Run 1, 6. Warnings
 
 - **W1. A 429 shows "No webhook configured".** The panel sets
   `configured: false` on any non-2xx. The PR introduced the 429, so it
