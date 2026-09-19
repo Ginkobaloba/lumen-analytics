@@ -141,14 +141,16 @@ The guard is defense-in-depth against direct DB tampering, and only
 ## 2026-09-19: Node 22 base image
 
 Node 20 is EOL; team standard is Node 22. All three Dockerfile stages
-moved from node:20-bookworm-slim to node:22-bookworm-slim. The apt-get
-install of python3/make/g++ (previously needed so better-sqlite3 could
-compile from source via node-gyp) was removed: better-sqlite3@12.10.0
+moved from node:20-bookworm-slim to node:22-bookworm-slim.
+
+The apt-get install of python3/make/g++ stays. better-sqlite3@12.10.0
 ships a prebuilt binary for node 22 linux-x64 (NODE_MODULE_VERSION 127),
-confirmed by a clean `docker build` with the toolchain absent and a
-throwaway container serving 200 on `/`. One build attempt during this
-change hit a transient prebuild-install network timeout; an immediate
-retry with no other changes built cleanly, which is the tradeoff of
-dropping the toolchain: without it, a failed prebuild fetch has no
-source-compile fallback and fails the build outright. Re-add the apt
-step if that becomes a recurring problem.
+so the toolchain is normally unused: a `docker build` with it removed
+completed cleanly and a throwaway container served 200 on `/`. But the
+first attempt of that same experiment hit a prebuild-install network
+timeout with nothing to fall back to, and failed outright; an unchanged
+retry then built cleanly. A build that fails on a flaky network is worse
+than a slightly larger builder stage, and the toolchain only lives in
+the build stage (never ships in the runtime image), so it was kept as a
+fallback: better-sqlite3 normally installs from the prebuild, and
+compiles from source only if that download fails or is unavailable.
