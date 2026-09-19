@@ -34,8 +34,21 @@ jobs:
 
       - name: Install yq
         run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          YQ_VERSION="v4.44.3"
+          YQ_BINARY="yq_linux_amd64"
+          YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}"
+
+          # Download yq binary
+          sudo wget -qO /usr/local/bin/yq "$YQ_URL"
+
+          # Verify SHA256 against the known hash for yq v4.44.3 yq_linux_amd64.
+          # yq's "checksums" file is not sha256sum(1) format (one line per
+          # file with 30+ hash columns), so sha256sum -c against it always
+          # fails to find a properly formatted line. Hard-code the expected
+          # hash instead.
+          YQ_SHA256="a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7"
+          echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c -
+
           sudo chmod +x /usr/local/bin/yq
 
       - name: Run quick smoke against verify/smoke.yml

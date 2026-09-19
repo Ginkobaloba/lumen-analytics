@@ -159,6 +159,8 @@ export function AnomalyPanel({
         body: JSON.stringify({ anomalyId: detail.id }),
       });
       if (r.ok) setAlert((await r.json()) as SlackAlertState);
+      else if (r.status === 429)
+        setAlert({ configured: true, delivered: false, status: 429, target: null, error: "rate_limited" });
       else setAlert({ configured: false, delivered: false, status: r.status, target: null, error: `Request failed (${r.status})` });
     } catch {
       setAlert({ configured: false, delivered: false, status: null, target: null, error: "Network error" });
@@ -431,16 +433,20 @@ export function AnomalyPanel({
                         "text-xs",
                         alert.delivered
                           ? "text-metric-good"
-                          : alert.configured
-                            ? "text-anomaly-high-text"
-                            : "text-anomaly-moderate-text",
+                          : alert.status === 429
+                            ? "text-anomaly-moderate-text"
+                            : alert.configured
+                              ? "text-anomaly-high-text"
+                              : "text-anomaly-moderate-text",
                       )}
                     >
                       {alert.delivered
                         ? `Delivered to ${alert.target ?? "Slack"} (HTTP ${alert.status}).`
-                        : alert.configured
-                          ? `Webhook error: ${alert.error ?? `HTTP ${alert.status}`}.`
-                          : "No webhook configured (set LUMEN_SLACK_WEBHOOK_URL). Payload built and ready to send."}
+                        : alert.status === 429
+                          ? "Rate limited, try again in a minute."
+                          : alert.configured
+                            ? `Webhook error: ${alert.error ?? `HTTP ${alert.status}`}.`
+                            : "No webhook configured (set LUMEN_SLACK_WEBHOOK_URL). Payload built and ready to send."}
                     </p>
                   )}
                 </div>

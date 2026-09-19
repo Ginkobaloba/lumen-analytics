@@ -98,12 +98,12 @@ export const METRIC_BY_ID: Record<string, MetricDef> = Object.fromEntries(
 );
 
 export const TEAM = [
-  { id: "u-priya", name: "Priya Raghavan", email: "priya@lumenanalytics.io", role: "Head of Data", initials: "PR", color: "#178049" },
-  { id: "u-marcus", name: "Marcus Webb", email: "marcus@lumenanalytics.io", role: "Revenue Analyst", initials: "MW", color: "#2F6E99" },
-  { id: "u-elena", name: "Elena Sorokina", email: "elena@lumenanalytics.io", role: "Growth PM", initials: "ES", color: "#8A6A00" },
-  { id: "u-david", name: "David Okafor", email: "david@lumenanalytics.io", role: "Customer Success Lead", initials: "DO", color: "#A84A33" },
-  { id: "u-jin", name: "Jin Park", email: "jin@lumenanalytics.io", role: "Data Engineer", initials: "JP", color: "#0F5E36" },
-  { id: "u-sofia", name: "Sofia Mendes", email: "sofia@lumenanalytics.io", role: "Product Analyst", initials: "SM", color: "#6B4FA0" },
-  { id: "u-tom", name: "Tom Eriksen", email: "tom@lumenanalytics.io", role: "VP Revenue", initials: "TE", color: "#3A403D" },
-  { id: "u-aisha", name: "Aisha Drammeh", email: "aisha@lumenanalytics.io", role: "Support Ops", initials: "AD", color: "#B0892F" },
+  { id: "u-priya", name: "Priya Raghavan", email: "priya@lumen.example", role: "Head of Data", initials: "PR", color: "#178049" },
+  { id: "u-marcus", name: "Marcus Webb", email: "marcus@lumen.example", role: "Revenue Analyst", initials: "MW", color: "#2F6E99" },
+  { id: "u-elena", name: "Elena Sorokina", email: "elena@lumen.example", role: "Growth PM", initials: "ES", color: "#8A6A00" },
+  { id: "u-david", name: "David Okafor", email: "david@lumen.example", role: "Customer Success Lead", initials: "DO", color: "#A84A33" },
+  { id: "u-jin", name: "Jin Park", email: "jin@lumen.example", role: "Data Engineer", initials: "JP", color: "#0F5E36" },
+  { id: "u-sofia", name: "Sofia Mendes", email: "sofia@lumen.example", role: "Product Analyst", initials: "SM", color: "#6B4FA0" },
+  { id: "u-tom", name: "Tom Eriksen", email: "tom@lumen.example", role: "VP Revenue", initials: "TE", color: "#3A403D" },
+  { id: "u-aisha", name: "Aisha Drammeh", email: "aisha@lumen.example", role: "Support Ops", initials: "AD", color: "#B0892F" },
 ] as const;

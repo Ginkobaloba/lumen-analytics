@@ -96,4 +96,13 @@ describe("sendSlackAlert", () => {
     expect(result).toMatchObject({ configured: true, delivered: false, status: 404 });
     expect(result.error).toBeDefined();
   });
+
+  it("returns generic error message on fetch failure", async () => {
+    const env = { ...process.env, LUMEN_SLACK_WEBHOOK_URL: "https://hooks.slack.test/x" };
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network timeout"));
+
+    const result = await sendSlackAlert(buildSlackPayload(INPUT), env);
+    expect(result).toMatchObject({ configured: true, delivered: false, status: null });
+    expect(result.error).toBe("delivery failed");
+  });
 });

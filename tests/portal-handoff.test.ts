@@ -173,7 +173,7 @@ describe("POST /api/portal/handoff", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe("misconfigured");
-    expect(body.detail).toMatch(/SESSION_SECRET/);
+    expect(body.detail).toBeUndefined();
   });
 
   it("returns 401 with reason for a token signed by an unknown key", async () => {
@@ -186,11 +186,8 @@ describe("POST /api/portal/handoff", () => {
     const res = await POST(buildRequest(token));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.ok).toBe(false);
     expect(body.error).toBe("unauthorized");
-    expect(["bad_signature", "no_matching_key", "malformed"]).toContain(
-      body.detail,
-    );
+    expect(body.detail).toBeUndefined();
     expect(res.headers.get("set-cookie") ?? "").not.toContain(
       "lumen_demo_session",
     );
@@ -205,7 +202,8 @@ describe("POST /api/portal/handoff", () => {
     const res = await POST(buildRequest(token));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.detail).toBe("bad_audience");
+    expect(body.error).toBe("unauthorized");
+    expect(body.detail).toBeUndefined();
   });
 
   it("returns 401 when no token is provided", async () => {
@@ -216,7 +214,8 @@ describe("POST /api/portal/handoff", () => {
     const res = await POST(buildRequest(""));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.detail).toBe("missing_token");
+    expect(body.error).toBe("unauthorized");
+    expect(body.detail).toBeUndefined();
   });
 
   it("returns 400 when the body is not valid JSON", async () => {
@@ -235,6 +234,7 @@ describe("POST /api/portal/handoff", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("bad_request");
+    expect(body.detail).toBeUndefined();
   });
 
   it("returns 500 when portal env vars are missing", async () => {
@@ -244,7 +244,7 @@ describe("POST /api/portal/handoff", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe("misconfigured");
-    expect(body.detail).toMatch(/PORTAL_JWKS_URL/);
+    expect(body.detail).toBeUndefined();
   });
 
   it("does not overwrite the existing cookie sign-in shortcut (route paths are separate)", async () => {
