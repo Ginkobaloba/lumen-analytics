@@ -56,32 +56,39 @@ describe("triage-overlay (M1: per-visitor client-side triage)", () => {
     delete (globalThis as { window?: unknown }).window;
   });
 
-  it("computeNextTriageState mirrors the old server-side forward-only rules", () => {
-    expect(
-      computeNextTriageState({ status: "active", assignedTo: null }, { action: "acknowledge" }, TEAM),
-    ).toMatchObject({ status: "acknowledged", assignedTo: null });
+  /*
+    Deep-verify finding B1 (2026-09-19): the first version set
+    `acknowledged` unconditionally on "acknowledge", so a visitor could
+    take a `false_positive` or `resolved` anomaly back to `acknowledged`
+    in one click, contradicting the docstring's "false positive is
+    terminal". That mirrored the deleted server code exactly, which was
+    never actually forward-only either. This pins the full allowed-
+    transition table (4 starting statuses x 3 actions) so it can't
+    regress silently again.
+  */
+  const ALL_STATUSES = ["active", "acknowledged", "resolved", "false_positive"] as const;
 
-    // Assigning from active also advances status to acknowledged.
-    expect(
-      computeNextTriageState(
-        { status: "active", assignedTo: null },
+  it("acknowledge only ever moves active -> acknowledged; every other status is a no-op", () => {
+    for (const status of ALL_STATUSES) {
+      const result = computeNextTriageState({ status, assignedTo: null }, { action: "acknowledge" }, TEAM);
+      if ("error" in result) throw new Error("unexpected error result");
+      expect(result.status).toBe(status === "active" ? "acknowledged" : status);
+      expect(result.assignedTo).toBeNull();
+    }
+  });
+
+  it("assign always sets the owner; it only advances status when starting from active", () => {
+    for (const status of ALL_STATUSES) {
+      const result = computeNextTriageState(
+        { status, assignedTo: null },
         { action: "assign", userId: "u-priya" },
         TEAM,
-      ),
-    ).toMatchObject({ status: "acknowledged", assignedTo: "u-priya", assigneeName: "Priya Raghavan" });
-
-    // Assigning once already acknowledged/resolved doesn't move status.
-    expect(
-      computeNextTriageState(
-        { status: "resolved", assignedTo: null },
-        { action: "assign", userId: "u-priya" },
-        TEAM,
-      ),
-    ).toMatchObject({ status: "resolved", assignedTo: "u-priya" });
-
-    expect(
-      computeNextTriageState({ status: "active", assignedTo: null }, { action: "false_positive" }, TEAM),
-    ).toMatchObject({ status: "false_positive" });
+      );
+      if ("error" in result) throw new Error("unexpected error result");
+      expect(result.assignedTo).toBe("u-priya");
+      expect(result.assigneeName).toBe("Priya Raghavan");
+      expect(result.status).toBe(status === "active" ? "acknowledged" : status);
+    }
 
     const bad = computeNextTriageState(
       { status: "active", assignedTo: null },
@@ -89,6 +96,28 @@ describe("triage-overlay (M1: per-visitor client-side triage)", () => {
       TEAM,
     );
     expect("error" in bad).toBe(true);
+  });
+
+  it("false_positive is reachable from every status", () => {
+    for (const status of ALL_STATUSES) {
+      const result = computeNextTriageState({ status, assignedTo: null }, { action: "false_positive" }, TEAM);
+      if ("error" in result) throw new Error("unexpected error result");
+      expect(result.status).toBe("false_positive");
+    }
+  });
+
+  it("false_positive and resolved are terminal for status: acknowledge cannot reopen them", () => {
+    for (const terminal of ["resolved", "false_positive"] as const) {
+      const result = computeNextTriageState(
+        { status: terminal, assignedTo: "u-dev" },
+        { action: "acknowledge" },
+        TEAM,
+      );
+      if ("error" in result) throw new Error("unexpected error result");
+      expect(result.status).toBe(terminal);
+      // Acknowledge is a status no-op; it does not touch the assignee.
+      expect(result.assignedTo).toBe("u-dev");
+    }
   });
 
   it("is a no-op outside the browser (SSR, no window)", () => {
@@ -138,7 +167,7 @@ describe("triage-overlay (M1: per-visitor client-side triage)", () => {
     expect(applyOverlay(anomaly).status).toBe("active");
   });
 
-  it("is forward-only across repeated actions, same as the old server rule", () => {
+  it("is forward-only across repeated actions applied through the overlay", () => {
     useBrowser();
     const anomaly = { id: "an-fwd", status: "active", assigned_to: null };
     applyTriageAction(anomaly, { action: "acknowledge" }, TEAM);
@@ -147,6 +176,13 @@ describe("triage-overlay (M1: per-visitor client-side triage)", () => {
     if ("error" in result) throw new Error("unexpected error result");
     expect(result.status).toBe("acknowledged");
     expect(result.assignedTo).toBe("u-priya");
+
+    // Now mark it false positive, then confirm acknowledge can never
+    // bring it back (the exact bug in B1).
+    applyTriageAction(anomaly, { action: "false_positive" }, TEAM);
+    const afterFp = applyTriageAction(anomaly, { action: "acknowledge" }, TEAM);
+    if ("error" in afterFp) throw new Error("unexpected error result");
+    expect(afterFp.status).toBe("false_positive");
   });
 
   it("tolerates corrupt localStorage JSON instead of throwing", () => {
@@ -154,6 +190,92 @@ describe("triage-overlay (M1: per-visitor client-side triage)", () => {
     fake.localStorage.setItem("lumen_triage_overlay_v1", "{not json");
     expect(readOverlay()).toEqual({});
     expect(() => applyOverlay({ id: "a1", status: "active", assigned_to: null })).not.toThrow();
+  });
+
+  it("treats non-object top-level JSON as an empty overlay instead of throwing", () => {
+    const fake = useBrowser();
+    for (const raw of ["[]", '"just a string"', "42", "null", "true"]) {
+      fake.localStorage.setItem("lumen_triage_overlay_v1", raw);
+      expect(readOverlay()).toEqual({});
+      expect(() => applyOverlay({ id: "a1", status: "active", assigned_to: null })).not.toThrow();
+    }
+  });
+
+  /*
+    Deep-verify finding B2 (2026-09-19): an overlay entry with an object
+    `assigneeName` reached a rendered prop and crashed /app/anomalies
+    (React error #31), in both the table and the panel, and the crash
+    survived reloads. Every entry is now validated field by field on
+    read; a wrong-schema entry is dropped instead of rendered.
+  */
+  it("drops a wrong-schema overlay entry instead of crashing the render (B2)", () => {
+    const fake = useBrowser();
+    fake.localStorage.setItem(
+      "lumen_triage_overlay_v1",
+      JSON.stringify({
+        // The exact shape that crashed the log and panel.
+        "an-bad-object-name": {
+          status: "acknowledged",
+          assignedTo: null,
+          assigneeName: { first: "Oops" },
+          updatedAt: "2026-09-19T00:00:00Z",
+        },
+        "an-bad-status": { status: "not-a-real-status", assignedTo: null, assigneeName: null, updatedAt: "x" },
+        "an-bad-assigned-number": { status: "active", assignedTo: 42, assigneeName: null, updatedAt: "x" },
+        "an-bad-updatedat-number": { status: "active", assignedTo: null, assigneeName: null, updatedAt: 12345 },
+        "an-bad-whole-array": ["not", "an", "entry"],
+        "an-bad-whole-string": "just a string",
+        "an-bad-whole-number": 12345,
+        "an-bad-whole-null": null,
+        // Otherwise-valid entry with unrecognized extra keys: tolerated.
+        "an-ok-extra-keys": {
+          status: "resolved",
+          assignedTo: null,
+          assigneeName: null,
+          updatedAt: "2026-09-19T00:00:00Z",
+          somethingElse: "field",
+          another: 1,
+        },
+        "an-ok": {
+          status: "acknowledged",
+          assignedTo: "u-priya",
+          assigneeName: "Priya Raghavan",
+          updatedAt: "2026-09-19T00:00:00Z",
+        },
+      }),
+    );
+
+    const overlay = readOverlay();
+    expect(Object.keys(overlay).sort()).toEqual(["an-ok", "an-ok-extra-keys"]);
+    expect(overlay["an-ok-extra-keys"].status).toBe("resolved");
+
+    const badIds = [
+      "an-bad-object-name",
+      "an-bad-status",
+      "an-bad-assigned-number",
+      "an-bad-updatedat-number",
+      "an-bad-whole-array",
+      "an-bad-whole-string",
+      "an-bad-whole-number",
+      "an-bad-whole-null",
+    ];
+    for (const id of badIds) {
+      // A dropped entry falls back to the server (seed) row -- exactly
+      // as if this browser had never triaged that anomaly -- never a
+      // half-applied or garbage-shaped merge.
+      const merged = applyOverlay({ id, status: "active", assigned_to: "seed-owner" });
+      expect(merged).toEqual({ id, status: "active", assigned_to: "seed-owner" });
+    }
+    expect(() => applyOverlayToList(badIds.map((id) => ({ id, status: "active", assigned_to: null })))).not.toThrow();
+
+    const mergedOk = applyOverlay<{
+      id: string;
+      status: string;
+      assigned_to: string | null;
+      assignee_name?: string | null;
+    }>({ id: "an-ok", status: "active", assigned_to: null });
+    expect(mergedOk.status).toBe("acknowledged");
+    expect(mergedOk.assignee_name).toBe("Priya Raghavan");
   });
 
   it("clearOverlay wipes this browser's triage back to seed", () => {

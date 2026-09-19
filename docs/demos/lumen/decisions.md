@@ -89,10 +89,12 @@ shared `anomalies` table is seed data only from here on:
   response.
 - `runDetection` snapshots the seed/detector's workflow state into a new
   `anomalies_seed_snapshot` table. `openDb()` diffs `anomalies` against
-  that snapshot on the process's first connection and restores any
-  drift, which covers an already-running container's SQLite file that
-  had mutated rows from before this fix (belt-and-suspenders; nothing
-  should ever drift again going forward).
+  that snapshot on the process's first connection and restores drift in
+  `status` and `assigned_to` only (not other columns, and not row
+  inserts or deletes). This is defense-in-depth against direct tampering
+  with the SQLite file, not a running-container repair: the deployed
+  container mounts no volume, so its database is always freshly seeded
+  at image build and can't actually carry drift from before this fix.
 - `src/lib/anomaly-actions.ts` (the server-side DB writer) is deleted.
 
 One visitor's triage is never visible to another visitor or a fresh
@@ -102,3 +104,36 @@ forward-only transitions, SSR no-op, corrupt-storage safety),
 `tests/anomaly-status-route.test.ts` (cookie gate, shared row never
 mutates), `tests/anomaly-seed-guard.test.ts` (snapshot + restore-on-
 restart).
+
+### 2026-09-19 follow-up: two deep-verify blockers fixed (B1, B2)
+
+Independent deep verify of PR #35
+(`verify/reports/DEEP_VERIFY_2026-09-19_pr35-per-visitor-triage.md`)
+found the shared-state fix above held under 10,106 requests and all UI
+triage, but failed two claims:
+
+- **B1: "forward-only" was false.** `computeNextTriageState` set
+  `acknowledged` unconditionally, so clicking Acknowledge moved a
+  `false_positive` or `resolved` anomaly back to `acknowledged` -- this
+  exactly mirrored the deleted server code, which was never actually
+  forward-only either, despite the docstring's claim. Fixed: acknowledge
+  now only advances `active` to `acknowledged` and is a no-op on every
+  other status; the Acknowledge button is disabled unless the anomaly is
+  `active`. Full transition table pinned in
+  `tests/triage-overlay.test.ts`.
+- **B2: a wrong-schema overlay entry crashed the anomaly log.** An entry
+  whose `assigneeName` was an object reached a rendered prop and threw
+  React error #31 on `/app/anomalies` (table and panel), surviving
+  reloads. Fixed: every overlay entry is now validated field by field on
+  read (`status` one of the four known values, `assignedTo` and
+  `assigneeName` string-or-null, `updatedAt` a string); an entry that
+  fails is dropped, and the anomaly it named just renders as its server
+  (seed) row. Extra unrecognized keys on an otherwise-valid entry are
+  tolerated.
+
+Also corrected: the seed-guard comments (schema.sql, db/index.ts,
+run-detection.ts) and the Dockerfile header overstated the guard as
+recovering an already-running container's mutated state; the deployed
+container mounts no volume, so that scenario can't reach the new code.
+The guard is defense-in-depth against direct DB tampering, and only
+`status`/`assigned_to` (not other columns, inserts, or deletes).

@@ -27,11 +27,19 @@ export function openDb(dbPath: string = process.env.LUMEN_DB_PATH ?? DEFAULT_DB_
 
 /**
  * M1 guard: anomaly triage moved client-side (per-visitor localStorage
- * overlay, see src/lib/triage-overlay.ts) and nothing writes to the
- * `anomalies` table anymore. This runs once, on the process's first
- * connection, and restores any row that still drifted from the
- * anomalies_seed_snapshot table -- leftover state from before this fix,
- * in a container whose SQLite file survives until the next redeploy.
+ * overlay, see src/lib/triage-overlay.ts) and nothing in this app writes
+ * to the `anomalies` table anymore. This runs once, on the process's
+ * first connection, and restores `status` and `assigned_to` drift
+ * against the anomalies_seed_snapshot table -- it does not repair any
+ * other column, and it does not re-insert a deleted row or remove one
+ * inserted outside the snapshot.
+ *
+ * It is defense-in-depth against direct tampering with the SQLite file,
+ * not a fix for a stale running container: the deployed container
+ * mounts no volume, so its database is always freshly seeded at image
+ * build and this scenario can't actually occur there (see the deep-
+ * verify report's Theater Check,
+ * verify/reports/DEEP_VERIFY_2026-09-19_pr35-per-visitor-triage.md).
  * Older database files (predating the snapshot table) are left alone.
  */
 function restoreAnomaliesToSeed(instance: Database.Database): void {

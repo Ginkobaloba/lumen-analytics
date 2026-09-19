@@ -37,16 +37,55 @@ type OverlayMap = Record<string, TriageOverlayEntry>;
 
 const STORAGE_KEY = "lumen_triage_overlay_v1";
 const CHANGE_EVENT = "lumen-triage-overlay-change";
+const VALID_STATUSES: readonly AnomalyStatus[] = [
+  "active",
+  "acknowledged",
+  "resolved",
+  "false_positive",
+];
 
 function hasWindow(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
+/** Field-by-field validation for one overlay entry (deep-verify finding
+    B2, 2026-09-19: an entry with e.g. an object `assigneeName` reached a
+    rendered prop and crashed the anomaly log with React error #31). An
+    entry that isn't a plain object, or whose known fields aren't the
+    right type or value, is invalid. Unrecognized extra keys are
+    tolerated and ignored -- only the four known fields are checked. */
+function isValidOverlayEntry(value: unknown): value is TriageOverlayEntry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.status !== "string" || !VALID_STATUSES.includes(v.status as AnomalyStatus)) {
+    return false;
+  }
+  if (v.assignedTo !== null && typeof v.assignedTo !== "string") return false;
+  if (v.assigneeName !== null && typeof v.assigneeName !== "string") return false;
+  if (typeof v.updatedAt !== "string") return false;
+  return true;
+}
+
+/** Parse the raw storage string into an overlay map, dropping any entry
+    that fails validation. Never throws: invalid JSON, a non-object top
+    level (array, string, number, null), and per-entry schema violations
+    all resolve to an empty or partial map instead of reaching a caller. */
 function safeParse(raw: string | null): OverlayMap {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === "object" ? (parsed as OverlayMap) : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    // Object.create(null): a key literally named "__proto__" in the
+    // stored JSON must not reach Object.prototype's setter and change
+    // this map's own prototype chain.
+    const result: OverlayMap = Object.create(null) as OverlayMap;
+    for (const [id, entry] of Object.entries(parsed as Record<string, unknown>)) {
+      if (isValidOverlayEntry(entry)) result[id] = entry;
+      // A wrong-schema entry is dropped silently: the anomaly it names
+      // just renders as its server (seed) row, same as if this browser
+      // had never triaged it.
+    }
+    return result;
   } catch {
     return {};
   }
@@ -100,6 +139,9 @@ interface AnomalyLike {
   updated_at?: string;
 }
 
+// Entries reaching here always came through safeParse()'s
+// isValidOverlayEntry check (readOverlay is the only way into this
+// module's map), so no further validation happens at merge time.
 function mergeEntry<T extends AnomalyLike>(anomaly: T, entry: TriageOverlayEntry | undefined): T {
   if (!entry) return anomaly;
   return {
@@ -126,11 +168,30 @@ export function applyOverlayToList<T extends AnomalyLike>(anomalies: T[]): T[] {
   return anomalies.map((a) => mergeEntry(a, overlay[a.id]));
 }
 
-/** Forward-only transition rules, mirrored from the old server-side
-    anomaly-actions.ts: acknowledge and assign both move `active` to
-    `acknowledged`; false positive is terminal for the demo. Pure
-    function, no I/O, so it is also the unit under test for the
-    workflow rules. */
+/**
+ * Forward-only transition rules for the three client-side triage
+ * actions. Full table (deep-verify finding B1, 2026-09-19: the first
+ * version set `acknowledged` unconditionally, so Acknowledge could move
+ * a `false_positive` or `resolved` anomaly backward into acknowledged --
+ * exactly the deleted server code's behavior, which was never actually
+ * forward-only either, despite this module's original docstring saying
+ * so):
+ *
+ *   action \ current    active        acknowledged   resolved   false_positive
+ *   acknowledge         -> acknowledged  no-op         no-op       no-op
+ *   assign              -> acknowledged  no-op*        no-op*      no-op*
+ *   false_positive      -> false_positive -> false_positive -> false_positive -> false_positive
+ *
+ *   * assign always sets `assignedTo` regardless of status; the "no-op"
+ *     above is about `status` only -- assigning an investigator to an
+ *     already-triaged anomaly changes who owns it without reopening it.
+ *
+ * Acknowledge is intentionally not a way to undo a false positive or
+ * reopen a resolved anomaly: it is a no-op on every status except
+ * `active`. Pure function, no I/O, so it is also the unit under test for
+ * the workflow rules (see the transition-table test in
+ * tests/triage-overlay.test.ts).
+ */
 export function computeNextTriageState(
   current: { status: string; assignedTo: string | null },
   input: AnomalyTriageAction,
@@ -141,7 +202,7 @@ export function computeNextTriageState(
 
   switch (input.action) {
     case "acknowledge":
-      status = "acknowledged";
+      if (status === "active") status = "acknowledged";
       break;
     case "assign": {
       const user = team.find((u) => u.id === input.userId);

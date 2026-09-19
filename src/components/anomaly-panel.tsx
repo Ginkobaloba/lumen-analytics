@@ -368,7 +368,7 @@ export function AnomalyPanel({
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
-                    disabled={pending !== null || detail.status === "acknowledged"}
+                    disabled={pending !== null || detail.status !== "active"}
                     onClick={() => act({ action: "acknowledge" })}
                   >
                     {pending === "acknowledge" && (

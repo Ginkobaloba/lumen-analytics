@@ -1,8 +1,10 @@
 # Lumen Analytics demo container. Three stages: install, build (seeds the
 # synthetic SQLite database and runs anomaly detection, then compiles the
 # standalone Next.js server), and a slim runtime. The database ships inside
-# the image; runtime writes (anomaly triage status) land in the container
-# layer and reset on redeploy, which is the intended behavior for a demo.
+# the image, read-mostly: anomaly triage is per-visitor and client-side
+# (localStorage), not a container-layer write, and resets to the seeded
+# state on redeploy (or per browser, on a cleared localStorage), which is
+# the intended behavior for a demo.
 
 FROM node:20-bookworm-slim AS deps
 WORKDIR /app
