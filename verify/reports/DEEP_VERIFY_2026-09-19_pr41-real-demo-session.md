@@ -45,9 +45,11 @@ from the PR body, the diff and the source, not from the builder's word.
 - **Secrets:** both session secrets are 64-character random throwaways
   generated in this run (`crypto.randomBytes(48).toString('base64url')`).
   Nothing under `C:\Users\Drama\.secrets` was read, opened, hashed or
-  printed, and no `.env*` file was opened. The npmrc was referenced by path
-  only. Prod's secret length was taken from the parent session and not
-  re-checked here.
+  printed. The npmrc was referenced by path only. The one `.env*` file opened
+  in this run was the committed `.env.example` template, which is part of the
+  PR diff and carries no secret material; no other `.env*` file was opened.
+  Prod's secret length was taken from the parent session and not re-checked
+  here.
 - **Untouched:** the live `demo-lumenanalytics` container, the public URL,
   demo-proxy, cloudflare-config, and another session's `dvh36-*` containers.
   Nothing reached Slack or the real portal.
@@ -133,9 +135,15 @@ here. Every value was sent as a real `Cookie` header to five surfaces on
 | two JWTs concatenated | 307 | 401 | 401 |
 | no cookie at all | 307 | 401 | 401 |
 
-Every 307 goes to `/?signin=required` and carries
+Every 307 goes to `/?signin=required`. Every row where a cookie was actually
+sent, including the empty-valued one, also carries
 `Set-Cookie: lumen_demo_session=; Path=/; Expires=Thu, 01 Jan 1970 ...`, so
-the bad cookie is cleared with the right path.
+the bad cookie is cleared with the right path. The "no cookie at all" row
+carries no `Set-Cookie`, which is correct: the middleware gates the delete on
+`request.cookies.has(...)`, and there is nothing to clear. Worth noting that
+an empty-valued cookie does register as present over real HTTP and is
+cleared, even though the builder's own test skips that assertion for the
+empty case.
 
 ### Other routes checked for the same gap
 
