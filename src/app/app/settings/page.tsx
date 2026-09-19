@@ -62,7 +62,7 @@ export default function SettingsPage() {
               <label className="text-sm font-medium" htmlFor="ws-domain">
                 Workspace URL
               </label>
-              <Input id="ws-domain" value="lumenanalytics.io/app" readOnly />
+              <Input id="ws-domain" value="lumen.example/app" readOnly />
             </div>
           </div>
           <Separator />

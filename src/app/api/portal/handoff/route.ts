@@ -48,8 +48,9 @@ export async function POST(request: NextRequest) {
   let config: PortalVerifyConfig;
   try {
     config = portalVerifyConfigFromEnv();
-  } catch {
+  } catch (err) {
     // Misconfiguration is a 500: the operator forgot to wire the env vars.
+    console.error("[portal/handoff] misconfigured:", err);
     return jsonError(500, "misconfigured");
   }
 
@@ -69,7 +70,8 @@ export async function POST(request: NextRequest) {
       customerId,
       role,
     }));
-  } catch {
+  } catch (err) {
+    console.error("[portal/handoff] misconfigured:", err);
     return jsonError(500, "misconfigured");
   }
 

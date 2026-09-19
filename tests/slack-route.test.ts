@@ -80,4 +80,39 @@ describe("POST /api/alerts/slack", () => {
     const body = await resLimited.json();
     expect(body).toEqual({ error: "rate_limited" });
   });
+
+  it("returns 429 on the 6th call even when X-Forwarded-For rotates on every call", async () => {
+    const { POST } = await import("@/app/api/alerts/slack/route");
+
+    // Mock the anomaly detail so requests don't fail for missing anomaly
+    vi.doMock("@/lib/anomaly-detail", () => ({
+      getAnomalyDetail: () => ({
+        id: "an-test",
+        title: "Test",
+        summary: "Test summary",
+        severity: "low",
+        metric: { name: "Test Metric" },
+        date: "2026-01-01",
+        end_date: null,
+        sigma: 2.5,
+        contributors: [],
+        affected: null,
+      }),
+    }));
+
+    // 5 calls, each claiming a different client via a rotated XFF value.
+    for (let i = 0; i < 5; i++) {
+      const req = buildRequest(true, `10.9.9.${i}`);
+      const res = await POST(req);
+      expect(res.status).not.toBe(429);
+    }
+
+    // The 6th call, with yet another rotated XFF value, must still be
+    // limited: the window is global, not keyed on a client-supplied header.
+    const reqLimited = buildRequest(true, "10.9.9.99");
+    const resLimited = await POST(reqLimited);
+    expect(resLimited.status).toBe(429);
+    const body = await resLimited.json();
+    expect(body).toEqual({ error: "rate_limited" });
+  });
 });

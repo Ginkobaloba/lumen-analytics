@@ -12,30 +12,29 @@ export const dynamic = "force-dynamic";
   payload so the UI can show exactly what was sent, configured or not.
 */
 
-// In-memory rate limit: map of client IPs to request timestamps
-const requestHistory = new Map<string, number[]>();
+// In-memory rate limit: one global window across all callers. Keying on a
+// client-supplied header (X-Forwarded-For, X-Real-IP) is not trustworthy --
+// a caller can rotate it to get a fresh bucket on every request -- so this
+// limits the route as a whole instead of per claimed client.
+const requestHistory: number[] = [];
 const RATE_LIMIT_REQUESTS = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 60 seconds
 
-function isRateLimited(clientIp: string): boolean {
+function isRateLimited(): boolean {
   const now = Date.now();
-  const timestamps = requestHistory.get(clientIp) || [];
 
   // Remove old timestamps outside the window
-  const filtered = timestamps.filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
+  while (requestHistory.length > 0 && now - requestHistory[0] >= RATE_LIMIT_WINDOW_MS) {
+    requestHistory.shift();
+  }
 
-  if (filtered.length >= RATE_LIMIT_REQUESTS) {
+  if (requestHistory.length >= RATE_LIMIT_REQUESTS) {
     return true;
   }
 
   // Record this request
-  filtered.push(now);
-  requestHistory.set(clientIp, filtered);
+  requestHistory.push(now);
   return false;
-}
-
-function getClientIp(request: NextRequest): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0].trim() || request.headers.get("x-real-ip") || "unknown";
 }
 
 export async function POST(request: NextRequest) {
@@ -44,9 +43,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // Check rate limit
-  const clientIp = getClientIp(request);
-  if (isRateLimited(clientIp)) {
+  // Check rate limit (global, not keyed on a client-supplied header)
+  if (isRateLimited()) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
