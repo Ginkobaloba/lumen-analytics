@@ -21,7 +21,58 @@ export function openDb(dbPath: string = process.env.LUMEN_DB_PATH ?? DEFAULT_DB_
   }
   db = new Database(dbPath, { readonly: false, fileMustExist: true });
   db.pragma("journal_mode = WAL");
+  restoreAnomaliesToSeed(db);
   return db;
+}
+
+/**
+ * M1 guard: anomaly triage moved client-side (per-visitor localStorage
+ * overlay, see src/lib/triage-overlay.ts) and nothing in this app writes
+ * to the `anomalies` table anymore. This runs once, on the process's
+ * first connection, and restores `status` and `assigned_to` drift
+ * against the anomalies_seed_snapshot table -- it does not repair any
+ * other column, and it does not re-insert a deleted row or remove one
+ * inserted outside the snapshot.
+ *
+ * It is defense-in-depth against direct tampering with the SQLite file,
+ * not a fix for a stale running container: the deployed container
+ * mounts no volume, so its database is always freshly seeded at image
+ * build and this scenario can't actually occur there (see the deep-
+ * verify report's Theater Check,
+ * verify/reports/DEEP_VERIFY_2026-09-19_pr35-per-visitor-triage.md).
+ * Older database files (predating the snapshot table) are left alone.
+ */
+function restoreAnomaliesToSeed(instance: Database.Database): void {
+  const hasSnapshot = instance
+    .prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'anomalies_seed_snapshot'",
+    )
+    .get();
+  if (!hasSnapshot) return;
+
+  const drifted = instance
+    .prepare(
+      `SELECT COUNT(*) AS n FROM anomalies a
+       JOIN anomalies_seed_snapshot s ON s.id = a.id
+       WHERE a.status IS NOT s.status OR a.assigned_to IS NOT s.assigned_to`,
+    )
+    .get() as { n: number };
+  if (drifted.n === 0) return;
+
+  instance
+    .prepare(
+      `UPDATE anomalies
+       SET status = (SELECT status FROM anomalies_seed_snapshot WHERE id = anomalies.id),
+           assigned_to = (SELECT assigned_to FROM anomalies_seed_snapshot WHERE id = anomalies.id),
+           updated_at = (SELECT updated_at FROM anomalies_seed_snapshot WHERE id = anomalies.id)
+       WHERE id IN (SELECT id FROM anomalies_seed_snapshot)`,
+    )
+    .run();
+
+  // eslint-disable-next-line no-console -- operational signal only, not user-facing
+  console.warn(
+    `[lumen] restored ${drifted.n} anomaly row(s) to seed state on startup (M1 guard)`,
+  );
 }
 
 /** Create (or recreate) a database file with the schema applied.

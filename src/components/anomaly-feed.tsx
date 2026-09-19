@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { formatDateShort } from "@/lib/format";
+import { useTriageOverlayList } from "@/lib/use-triage-overlay";
 import type { AnomalyListItem } from "@/lib/queries";
 
 const SEVERITY_STYLE: Record<AnomalyListItem["severity"], string> = {
@@ -28,13 +29,16 @@ export function AnomalyFeed({
   anomalies: AnomalyListItem[];
   onSelect: (id: string) => void;
 }) {
+  // Each visitor's local triage merged over the seed rows (M1 fix).
+  const overlaid = useTriageOverlayList(anomalies);
+
   return (
     <Card className="shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Recently detected anomalies</CardTitle>
       </CardHeader>
       <CardContent>
-        {anomalies.length === 0 ? (
+        {overlaid.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
             <CheckCircle2 className="h-8 w-8 text-brand-meadow" aria-hidden />
             <p className="text-sm font-medium">No anomalies right now</p>
@@ -45,7 +49,7 @@ export function AnomalyFeed({
           </div>
         ) : (
           <ul className="divide-y">
-            {anomalies.map((a) => (
+            {overlaid.map((a) => (
               <li key={a.id} className="py-3 first:pt-0 last:pb-0">
                 <button
                   type="button"

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AnomalyFeed } from "@/components/anomaly-feed";
 import { AnomalyPanel } from "@/components/anomaly-panel";
 import { RevenueTrendChart } from "@/components/charts/revenue-trend-chart";
+import { useTriageOverlayList } from "@/lib/use-triage-overlay";
 import type { AnomalyListItem, SeriesPoint } from "@/lib/queries";
 
 /*
@@ -22,6 +23,10 @@ export function OverviewExplorer({
   recentAnomalies: AnomalyListItem[];
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  // Each visitor's local triage merged over the seed rows (M1 fix).
+  // AnomalyFeed merges its own `recentAnomalies` prop internally; only the
+  // chart markers need merging here.
+  const overlaidMarkers = useTriageOverlayList(revenueMarkers);
 
   return (
     <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -36,7 +41,7 @@ export function OverviewExplorer({
         <CardContent>
           <RevenueTrendChart
             data={revenueTrend}
-            markers={revenueMarkers}
+            markers={overlaidMarkers}
             onMarkerClick={setSelected}
           />
         </CardContent>

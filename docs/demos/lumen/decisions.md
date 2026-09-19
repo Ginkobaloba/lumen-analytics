@@ -65,3 +65,75 @@ Tailwind v3 (which create-next-app@14 ships). Its registry also emits
 oklch values that the generated config wrapped in hsl(), which is
 invalid CSS; fixed by storing complete hex values in the CSS variables
 and referencing them as `var(--x)` in tailwind.config.ts.
+
+## 2026-09-19: Anomaly triage moved client-side, per visitor (finding M1)
+
+`POST /api/anomalies/[id]/status` needed no session (middleware.ts's
+matcher only ever covered `/app/*`) and ran `UPDATE anomalies` on the one
+shared SQLite database every visitor reads. Any visitor or scanner could
+mark every anomaly "false positive," and every later visitor saw the
+demo's headline anomaly story as already dismissed until a redeploy.
+
+Fix, following the anonymous-by-design direction
+(`COUNCIL_COMPLIANCE_2026-09-19.md` 1.1/1.2 -- demos store no per-visitor
+state server-side): triage (Acknowledge, Assign, Mark as false positive)
+now lives entirely in the visitor's browser, in localStorage, merged over
+the server-rendered anomaly rows at render time
+(`src/lib/triage-overlay.ts`, `src/lib/use-triage-overlay.ts`). The
+shared `anomalies` table is seed data only from here on:
+
+- The status route no longer writes to `anomalies`. It still requires
+  the demo session cookie (a cheap scanner filter, same gate `/app/*`
+  already has) and still 404s for an unknown id, but a valid cookie is
+  not a write permit either -- it just returns a deprecated-endpoint
+  response.
+- `runDetection` snapshots the seed/detector's workflow state into a new
+  `anomalies_seed_snapshot` table. `openDb()` diffs `anomalies` against
+  that snapshot on the process's first connection and restores drift in
+  `status` and `assigned_to` only (not other columns, and not row
+  inserts or deletes). This is defense-in-depth against direct tampering
+  with the SQLite file, not a running-container repair: the deployed
+  container mounts no volume, so its database is always freshly seeded
+  at image build and can't actually carry drift from before this fix.
+- `src/lib/anomaly-actions.ts` (the server-side DB writer) is deleted.
+
+One visitor's triage is never visible to another visitor or a fresh
+client; a cleared localStorage (or a different browser) always reads the
+seed story. Tests: `tests/triage-overlay.test.ts` (visitor isolation,
+forward-only transitions, SSR no-op, corrupt-storage safety),
+`tests/anomaly-status-route.test.ts` (cookie gate, shared row never
+mutates), `tests/anomaly-seed-guard.test.ts` (snapshot + restore-on-
+restart).
+
+### 2026-09-19 follow-up: two deep-verify blockers fixed (B1, B2)
+
+Independent deep verify of PR #35
+(`verify/reports/DEEP_VERIFY_2026-09-19_pr35-per-visitor-triage.md`)
+found the shared-state fix above held under 10,106 requests and all UI
+triage, but failed two claims:
+
+- **B1: "forward-only" was false.** `computeNextTriageState` set
+  `acknowledged` unconditionally, so clicking Acknowledge moved a
+  `false_positive` or `resolved` anomaly back to `acknowledged` -- this
+  exactly mirrored the deleted server code, which was never actually
+  forward-only either, despite the docstring's claim. Fixed: acknowledge
+  now only advances `active` to `acknowledged` and is a no-op on every
+  other status; the Acknowledge button is disabled unless the anomaly is
+  `active`. Full transition table pinned in
+  `tests/triage-overlay.test.ts`.
+- **B2: a wrong-schema overlay entry crashed the anomaly log.** An entry
+  whose `assigneeName` was an object reached a rendered prop and threw
+  React error #31 on `/app/anomalies` (table and panel), surviving
+  reloads. Fixed: every overlay entry is now validated field by field on
+  read (`status` one of the four known values, `assignedTo` and
+  `assigneeName` string-or-null, `updatedAt` a string); an entry that
+  fails is dropped, and the anomaly it named just renders as its server
+  (seed) row. Extra unrecognized keys on an otherwise-valid entry are
+  tolerated.
+
+Also corrected: the seed-guard comments (schema.sql, db/index.ts,
+run-detection.ts) and the Dockerfile header overstated the guard as
+recovering an already-running container's mutated state; the deployed
+container mounts no volume, so that scenario can't reach the new code.
+The guard is defense-in-depth against direct DB tampering, and only
+`status`/`assigned_to` (not other columns, inserts, or deletes).

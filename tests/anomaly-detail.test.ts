@@ -10,17 +10,24 @@ import { seed } from "../scripts/seed";
 const END = "2026-06-10";
 
 /*
-  anomaly-detail and anomaly-actions are server-only modules; setting
-  LUMEN_DB_PATH before the dynamic import points their shared openDb()
-  singleton at the test database.
+  anomaly-detail is a server-only module; setting LUMEN_DB_PATH before the
+  dynamic import points its shared openDb() singleton at the test
+  database.
+
+  Triage used to be applied here via anomaly-actions.ts's
+  applyAnomalyAction, which wrote straight to the shared `anomalies`
+  table (M1: any visitor or scanner could POST /api/anomalies/[id]/status
+  with no session and dismiss the demo's anomaly story for everyone).
+  That module is deleted; triage is per-visitor and client-side now (see
+  src/lib/triage-overlay.ts, tests/triage-overlay.test.ts) and the shared
+  table stays at seed. This file only exercises the read path.
 */
 
-describe("anomaly detail + actions", () => {
+describe("anomaly detail", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "lumen-panel-"));
   const dbPath = path.join(tmpDir, "test.db");
   let db: Database.Database;
   let getAnomalyDetail: typeof import("@/lib/anomaly-detail").getAnomalyDetail;
-  let applyAnomalyAction: typeof import("@/lib/anomaly-actions").applyAnomalyAction;
   let churnId: string;
 
   beforeAll(async () => {
@@ -31,7 +38,6 @@ describe("anomaly detail + actions", () => {
 
     process.env.LUMEN_DB_PATH = dbPath;
     ({ getAnomalyDetail } = await import("@/lib/anomaly-detail"));
-    ({ applyAnomalyAction } = await import("@/lib/anomaly-actions"));
 
     const detail = getAnomalyDetail("nonexistent");
     expect(detail).toBeNull();
@@ -102,29 +108,11 @@ describe("anomaly detail + actions", () => {
     expect(d!.affected!.customersHref).toContain("anomaly=");
   });
 
-  it("applies acknowledge, assign, and false positive transitions", () => {
-    const ack = applyAnomalyAction(churnId, { action: "acknowledge" });
-    expect(ack).toMatchObject({ ok: true, status: "acknowledged" });
-    expect(ack.updated_at).toBeDefined();
-
-    // Persistence: a fresh read reflects the acknowledged state and stamp.
-    const reread = getAnomalyDetail(churnId);
-    expect(reread!.status).toBe("acknowledged");
-    expect(reread!.updated_at).toBe(ack.updated_at);
-
-    const assigned = applyAnomalyAction(churnId, { action: "assign", userId: "u-priya" });
-    expect(assigned).toMatchObject({
-      ok: true,
-      assigned_to: "u-priya",
-      assignee_name: "Priya Raghavan",
-    });
-
-    expect(applyAnomalyAction(churnId, { action: "false_positive" })).toMatchObject({
-      ok: true,
-      status: "false_positive",
-    });
-
-    expect(applyAnomalyAction(churnId, { action: "assign", userId: "nope" }).ok).toBe(false);
-    expect(applyAnomalyAction("missing", { action: "acknowledge" }).ok).toBe(false);
+  it("is read-only: repeated reads never change the persisted row (M1)", () => {
+    const first = getAnomalyDetail(churnId);
+    const second = getAnomalyDetail(churnId);
+    expect(second!.status).toBe(first!.status);
+    expect(second!.assigned_to).toBe(first!.assigned_to);
+    expect(second!.updated_at).toBe(first!.updated_at);
   });
 });

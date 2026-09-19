@@ -22,6 +22,7 @@ import {
 import { AnomalyPanel } from "@/components/anomaly-panel";
 import { cn } from "@/lib/utils";
 import { formatDateShort } from "@/lib/format";
+import { useTriageOverlayList } from "@/lib/use-triage-overlay";
 import type { AnomalyListItem } from "@/lib/queries";
 
 const SEVERITY_STYLE: Record<string, string> = {
@@ -49,6 +50,8 @@ export function AnomalyLog({ anomalies }: { anomalies: AnomalyListItem[] }) {
   );
   const [status, setStatus] = useState<string>("all");
   const [severity, setSeverity] = useState<string>("all");
+  // Each visitor's local triage merged over the seed rows (M1 fix).
+  const overlaid = useTriageOverlayList(anomalies);
 
   // Keep the open anomaly in the URL (?focus=<id>) so a drill-in is
   // shareable and survives a reload, and clears cleanly on close.
@@ -66,18 +69,18 @@ export function AnomalyLog({ anomalies }: { anomalies: AnomalyListItem[] }) {
 
   const filtered = useMemo(
     () =>
-      anomalies.filter(
+      overlaid.filter(
         (a) =>
           (status === "all" || a.status === status) &&
           (severity === "all" || a.severity === severity),
       ),
-    [anomalies, status, severity],
+    [overlaid, status, severity],
   );
 
   const counts = useMemo(() => {
-    const active = anomalies.filter((a) => a.status === "active").length;
-    return { total: anomalies.length, active };
-  }, [anomalies]);
+    const active = overlaid.filter((a) => a.status === "active").length;
+    return { total: overlaid.length, active };
+  }, [overlaid]);
 
   return (
     <div className="space-y-4">
