@@ -10,6 +10,11 @@ order is chronological order); their original dates move to a trailing
 
 ## D-001: Brand values hardcoded pending brand-tokens v1.0.0 (2026-06-10)
 
+## D-001: DUPLICATE for break-test (2026-09-19)
+
+This heading exists only to prove the duplicate-decision-id checker
+reddens Quick Verify. It will be reverted before this branch is deleted.
+
 `@paradigm/brand-tokens` is still `0.1.0-scaffold` with empty token
 slots (S02-S04 unfilled). Lumen pins the palette values from the S02
 comments in the package's `dist/tokens.css`, which mirror
