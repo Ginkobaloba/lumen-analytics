@@ -56,3 +56,10 @@ export async function POST(request: NextRequest) {
   });
   return response;
 }
+
+// Throwaway export to prove Build reddens Quick Verify in a way Typecheck
+// and Lint do not: valid TS, lint-clean, but Next's generated route-type
+// check (next build only, not tsc --noEmit) rejects any named export from
+// a route.ts file that isn't a recognized HTTP method or route config
+// option. Reverted before the break-test branch is deleted.
+export const breakTestBuildOnly = "not a valid route export";
