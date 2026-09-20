@@ -1,63 +1,43 @@
 #!/usr/bin/env node
-// Duplicate decision-id guard for docs/demos/lumen/decisions.md.
+// Duplicate decision-id guard for a repo's decisions log.
 //
-// Two branches each adding "## D-019: ..." merge cleanly with NO conflict
-// (they touch different lines, both appended near the end), and GitHub sees
-// no reason to complain. That happened for real in demo-harborbistro on
-// 2026-09-19 (two PRs both claimed D-019), and demo-axlepoint independently
-// found the same shape already latent in its own file (D-006..D-010 each
-// claimed twice). Nothing in either repo's CI would have caught it -- the
-// ledger check validates docs/ledger/, not the decisions log, and there was
-// no code path that reads a decision id and would fail on a collision.
+// Two branches each adding "## D-019: ..." to a decisions log merge
+// cleanly with NO conflict (they touch different lines, both appended
+// near the end), and GitHub sees no reason to complain. That happened for
+// real in demo-harborbistro on 2026-09-19: two PRs both claimed D-019.
+// Nothing else in CI reads a decision id and would fail on a collision --
+// this is the only thing that catches it.
 //
-// This repo (lumen-analytics) is a different starting point from both:
-// docs/demos/lumen/decisions.md never used a "## D-<n>" id scheme at all --
-// every entry was headed "## YYYY-MM-DD: <title>" with no id, and nothing
-// else in the repo (code comments, docs, ledger entries) ever cited a
-// decision by a "D-<n>" number, only by date and topic (confirmed by a
-// repo-wide grep before this change). So there was no pre-existing
-// collision to fix here, unlike axlepoint. This same change that adds this
-// checker also adopts the id scheme for the first time, numbering the file's
-// 10 existing entries D-001..D-010 in the order they already appear (the
-// file's own header says "newest last", so file order is chronological
-// order) and keeping each entry's original date as a "(YYYY-MM-DD)" suffix
-// on its heading. See docs/demos/lumen/decisions.md's own entry recording
-// this change for the "why adopt now" reasoning.
+// This script is the check: every `## D-<digits>` heading in the given
+// decisions log must have a unique id. Run:
+//   node scripts/check-decisions.mjs <path-to-decisions.md>
 //
-// This script is the check: every `## D-<digits>` heading in
-// docs/demos/lumen/decisions.md must have a unique id. Run:
-//   node scripts/check-decisions.mjs [path-to-decisions.md]
-//
-// Ported from demo-harborbistro (origin/main b205dec) by way of
-// demo-axlepoint (PR #34), which is the canonical version: axlepoint
-// refactored the id-count logic to share HEADING_RE via one parseHeadingIds
-// helper instead of a second, separately-maintained regex literal (harbor's
-// original computed idCount with its own inline
-// /^## D-\d+\b/gm, which could silently diverge from HEADING_RE if either
-// one changed without the other). This file keeps that refactor and the
-// path-shaped difference (DEFAULT_PATH below) is the only change from
-// axlepoint's version.
+// The path is required and repo-specific: each repo keeps its decisions
+// log at its own location and passes that path from its own call sites
+// (the CI step that runs this file). There is deliberately no built-in
+// default path -- a default is exactly the kind of repo-specific state
+// this shared script must not carry, and a missing, wrong, or omitted
+// path must fail loudly rather than silently check nothing.
 //
 // Also run by npm test (see check-decisions.test.mjs), which covers the
 // function in isolation. The CI step runs this file directly against the
-// real docs/demos/lumen/decisions.md, because a check that only exercises a
-// synthetic fixture is not proof the real file passes.
+// real decisions log, because a check that only exercises a synthetic
+// fixture is not proof the real file passes.
 
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-export const DEFAULT_PATH = join(ROOT, "docs", "demos", "lumen", "decisions.md");
 
-// Matches "## D-<digits>" UNLESS immediately followed by whitespace then the
-// word "addendum" (axlepoint's documented "revisit the same decision"
-// convention, not a new claim on the id). lumen-analytics has no addendum
-// headings today, but this stays byte-identical to the canonical version so
-// the four repos share one dialect and a future addendum here is already
-// handled correctly rather than silently miscounted. The `\b` keeps normal
-// headings like "## D-001: ..." matching exactly as before; the lookahead is
-// the only thing narrower than a plain `\b`.
+// Matches "## D-<digits>" UNLESS immediately followed by whitespace then
+// the word "addendum" -- some repos record a later revisit of an existing
+// decision as "## D-012 addendum (...): ..." under the SAME id on purpose,
+// rather than minting a new id. That is not a collision. The `\b` keeps
+// normal headings like "## D-001: ..." matching exactly as before; the
+// lookahead is the only thing narrower than a plain `\b`, so it still
+// flags any other non-addendum reuse of an id (including a heading with
+// no colon at all).
 const HEADING_RE = /^## D-(\d+)\b(?!\s+addendum\b)/;
 
 /**
@@ -107,13 +87,18 @@ export function checkDecisions(text, label = "decisions.md") {
   return problems;
 }
 
-export function runCheck(path = DEFAULT_PATH, log = console.log, err = console.error) {
-  const label = relative(ROOT, path) || path;
-  if (!existsSync(path)) {
+export function runCheck(path, log = console.log, err = console.error) {
+  if (!path) {
+    err("decisions: no path given; usage: node scripts/check-decisions.mjs <path-to-decisions.md>");
+    return 1;
+  }
+  const resolved = resolve(process.cwd(), path);
+  const label = relative(ROOT, resolved) || resolved;
+  if (!existsSync(resolved)) {
     err(`decisions: ${label} does not exist; nothing was checked`);
     return 1;
   }
-  const text = readFileSync(path, "utf8");
+  const text = readFileSync(resolved, "utf8");
   const problems = checkDecisions(text, label);
   for (const p of problems) err(`decisions: ${p}`);
   const idCount = parseHeadingIds(text).size;
@@ -122,7 +107,7 @@ export function runCheck(path = DEFAULT_PATH, log = console.log, err = console.e
 }
 
 function main([path]) {
-  return runCheck(path ? join(process.cwd(), path) : DEFAULT_PATH);
+  return runCheck(path);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
