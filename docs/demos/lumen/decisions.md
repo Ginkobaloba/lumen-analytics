@@ -2,7 +2,13 @@
 
 One entry per decision, newest last. Format: date, decision, why.
 
-## 2026-06-10: Brand values hardcoded pending brand-tokens v1.0.0
+Each entry is headed `## D-<n>: <title> (<date>)`. Ids were adopted
+2026-09-19 (D-011) for the ten entries that existed before then, numbered
+in file order (this file's own rule above -- newest last -- means file
+order is chronological order); their original dates move to a trailing
+`(YYYY-MM-DD)` on the heading. See D-011 for why.
+
+## D-001: Brand values hardcoded pending brand-tokens v1.0.0 (2026-06-10)
 
 `@paradigm/brand-tokens` is still `0.1.0-scaffold` with empty token
 slots (S02-S04 unfilled). Lumen pins the palette values from the S02
@@ -10,7 +16,7 @@ comments in the package's `dist/tokens.css`, which mirror
 PARADIGM_PLAN.md Section 3. Swap to the package preset when v1.0.0
 tags. Pinned in `tailwind.config.ts` and `src/app/globals.css`.
 
-## 2026-06-10: Terracotta defined locally as #BE5B41
+## D-002: Terracotta defined locally as #BE5B41 (2026-06-10)
 
 The spec calls for terracotta on high-severity anomalies and bad
 metrics, but the Paradigm palette has no terracotta (closest is Signal
@@ -19,7 +25,7 @@ terracotta `#BE5B41` for marker fills and `#A84A33` as the darkened
 AA-contrast text variant on white. If AxlePoint lands a different
 terracotta, adopt theirs (coordinate via the demos running handoff).
 
-## 2026-06-10: Warm off-white = Bone #F4F5F4, cards on Paper
+## D-003: Warm off-white = Bone #F4F5F4, cards on Paper (2026-06-10)
 
 "Warm off-white background" maps to the existing palette rather than a
 new cream tone: Bone (#F4F5F4) for the app background, Paper (#FFFFFF)
@@ -27,7 +33,7 @@ for cards and chart surfaces. Keeps Lumen inside the Paradigm palette
 while reading clearly lighter than the dark-default Paradigm site.
 Light theme only; no dark mode by design.
 
-## 2026-06-10: Sliced metrics generated at segment-cell level
+## D-004: Sliced metrics generated at segment-cell level (2026-06-10)
 
 Sliced metrics are generated per (plan tier x geography x industry)
 cell, then aggregated to the top line and to each one-dimensional
@@ -41,7 +47,7 @@ slice. Consequences:
   adoption), so cause attribution finds true signal instead of
   decoration.
 
-## 2026-06-10: Churn and contraction flows weighted by logo count
+## D-005: Churn and contraction flows weighted by logo count (2026-06-10)
 
 Initially all revenue flows were sized by cell MRR share, which made
 the Starter-concentrated churn spike invisible at the top level
@@ -50,7 +56,7 @@ MRR now size cells by active-customer share, which is also the more
 realistic model: churn volume follows logo counts. Verified by tests
 that pin top-level and slice-level lift during each anomaly window.
 
-## 2026-06-10: Deterministic dataset, db as build artifact
+## D-006: Deterministic dataset, db as build artifact (2026-06-10)
 
 Generator runs from fixed seed 20260610 (mulberry32, per-module child
 streams). `data/lumen.db` is gitignored and rebuilt by `npm run seed`;
@@ -58,7 +64,7 @@ same seed + same end date = identical dataset, so screenshots and the
 interview walkthrough are reproducible. The end date is a parameter
 (defaults to today) so the data always reads as current.
 
-## 2026-06-10: shadcn pinned at 2.3.0, CSS vars hold full color values
+## D-007: shadcn pinned at 2.3.0, CSS vars hold full color values (2026-06-10)
 
 shadcn latest assumes Tailwind v4; 2.3.0 is the last line that targets
 Tailwind v3 (which create-next-app@14 ships). Its registry also emits
@@ -66,7 +72,7 @@ oklch values that the generated config wrapped in hsl(), which is
 invalid CSS; fixed by storing complete hex values in the CSS variables
 and referencing them as `var(--x)` in tailwind.config.ts.
 
-## 2026-09-19: Anomaly triage moved client-side, per visitor (finding M1)
+## D-008: Anomaly triage moved client-side, per visitor (finding M1) (2026-09-19)
 
 `POST /api/anomalies/[id]/status` needed no session (middleware.ts's
 matcher only ever covered `/app/*`) and ran `UPDATE anomalies` on the one
@@ -138,7 +144,7 @@ container mounts no volume, so that scenario can't reach the new code.
 The guard is defense-in-depth against direct DB tampering, and only
 `status`/`assigned_to` (not other columns, inserts, or deletes).
 
-## 2026-09-19: Real signed demo session; per-client Slack alert limit (L1, L4, W8)
+## D-009: Real signed demo session; per-client Slack alert limit (L1, L4, W8) (2026-09-19)
 
 **L1, the demo session gate was decorative.** `src/middleware.ts` only
 checked that a `lumen_demo_session` cookie existed, `/api/session` set it
@@ -211,7 +217,7 @@ Tests: `tests/middleware-session.test.ts`, `tests/slack-route.test.ts`,
 `tests/portal-handoff.test.ts`, `tests/session-redirect.test.ts`; hostile
 cookie fixtures in `tests/helpers/session-tokens.ts`.
 
-## 2026-09-19: Node 22 base image
+## D-010: Node 22 base image (2026-09-19)
 
 Node 20 is EOL; team standard is Node 22. All three Dockerfile stages
 moved from node:20-bookworm-slim to node:22-bookworm-slim.
@@ -227,3 +233,60 @@ than a slightly larger builder stage, and the toolchain only lives in
 the build stage (never ships in the runtime image), so it was kept as a
 fallback: better-sqlite3 normally installs from the prebuild, and
 compiles from source only if that download fails or is unavailable.
+
+## D-011: Adopt D-<n> decision ids; Quick Verify runs real checks (2026-09-19)
+
+Before this change, `.github/workflows/verify.yml`'s "Quick Verify (all
+PRs)" job ran `npm run ledger:check`, `verify/ci/test_deep_gate.sh`, and a
+curl against the LIVE deployed site (`verify/smoke.yml`'s `deploy_url`) --
+none of which touches the PR's own code. A PR that broke the build,
+failed every test, or didn't typecheck could still merge green. This is
+the same defect class fixed for demo-harborbistro (PR #42), demo-slatewell
+(PR #43) and demo-axlepoint (PR #34); this is the fourth and last port.
+
+**Quick Verify now runs, against the PR's own checkout:** `npm ci`, this
+file's duplicate-decision-id check, `npm run typecheck`, `npm run
+mcp:typecheck`, `npm run lint`, `npm test`, `npm run build`, then the
+existing deep-verify self-test. `mcp:typecheck` is newly wired into CI
+(previously only run locally via `npm run verify`) because the reason it
+was excluded -- `npm ci` 401ing on the private `@paradigm-codes/*` scope
+with no token available in Actions -- no longer holds: `PACKAGES_TOKEN`
+now exists as a repo secret (confirmed via `gh secret list`, added
+2026-09-20T00:02:44Z, after PR #43 landed). The old live-site smoke step
+moves to its own non-required job, "Live smoke (deployed site)", named
+and commented to say plainly that it tests production, not this PR.
+
+**This decisions.md file had no id scheme before this change.** All ten
+prior entries were headed `## YYYY-MM-DD: <title>`, and a repo-wide grep
+(code, docs, ledger entries) found no reference to any decision by a
+`D-<n>` number anywhere -- every cross-reference cites a decision by date
+and topic instead. So, unlike axlepoint (which found a real pre-existing
+D-006..D-010 collision to fix), there was no collision to inherit here:
+adopting the id scheme is new, not a repair. The ten entries are numbered
+D-001..D-010 in file order (this file's own "newest last" rule means file
+order already is chronological order), and each original date moves to a
+`(YYYY-MM-DD)` suffix on its heading. No code or doc needed updating for
+this, because nothing cross-referenced these entries by number before.
+This entry is D-011, so `docs/demos/lumen/decisions.md` reports 11 unique
+ids with 0 problems as of this PR (verified: `node
+scripts/check-decisions.mjs` -> `decisions: 11 unique id(s), 0
+problem(s).`).
+
+**`npm run build` needs no seeded database.** Verified directly, not
+assumed: deleted the (gitignored, uncommitted) `data/` directory and ran
+`npm run build` from a clean worktree with no database present at all.
+Build succeeded, exit 0. Every `/app/*` and `/api/*` route in the report
+is marked dynamic (server-rendered on demand); the only two static
+(prerendered) routes are `/_not-found` and `/app/settings`, neither of
+which imports
+`src/lib/db.ts`. This matches demo-slatewell's and demo-axlepoint's
+finding for the same reason (nothing calls the database at module load
+or from a statically-rendered route) and differs from demo-harborbistro,
+whose build genuinely reads its seeded DB. The Dockerfile still runs
+`npm run seed:full && npm run build` in that order, but that order exists
+to ship the generated dataset inside the runtime image (`COPY --from=build
+/app/data ./data`), not because the build step reads it.
+
+Drew: the id adoption above is a technical call made and recorded here,
+not asked first -- flag if you would rather this file stay unnumbered and
+have Quick Verify skip the duplicate-id check for this repo only.
