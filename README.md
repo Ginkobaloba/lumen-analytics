@@ -16,7 +16,7 @@ deterministic seeded pipeline so the demo is reproducible run to run.
 
 ## Stack
 
-- Next.js 14 (App Router), TypeScript, Tailwind, shadcn/ui
+- Next.js 15.5 (App Router), TypeScript, Tailwind, shadcn/ui
 - Recharts (time series), D3 (cohort heatmap, Sankey funnel)
 - SQLite via better-sqlite3, populated by a synthetic data generator
 - Anomaly detection: STL-style trend + weekly seasonality decomposition,
@@ -96,3 +96,7 @@ PR and deep-verify (report gate) on any PR labeled `tier-3`.
 **Surface assertions:** `verify/assertions/` holds the full deep-verify
 assertion sets per surface (home, anomaly-log, anomaly-detail).
 `verify/smoke.yml` holds the fast subset that runs on every PR.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
