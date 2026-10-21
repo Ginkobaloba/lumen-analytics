@@ -21,7 +21,7 @@
     "ledger:check": "node scripts/ledger.mjs check"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@paradigm-codes/auth": "^0.1.0",
     "@radix-ui/react-avatar": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.16",
@@ -64,7 +64,7 @@
     "eslint": "^8",
     "eslint-config-next": "15.5.25",
     "postcss": "^8.5.23",
-    "tailwindcss": "^3.4.1",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.22.4",
     "typescript": "^5",
     "vitest": "^4.1.8"
