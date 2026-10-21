@@ -16,7 +16,7 @@ deterministic seeded pipeline so the demo is reproducible run to run.
 
 ## Stack
 
-- Next.js 14 (App Router), TypeScript, Tailwind, shadcn/ui
+- Next.js 15.5 (App Router), TypeScript, Tailwind, shadcn/ui
 - Recharts (time series), D3 (cohort heatmap, Sankey funnel)
 - SQLite via better-sqlite3, populated by a synthetic data generator
 - Anomaly detection: STL-style trend + weekly seasonality decomposition,
