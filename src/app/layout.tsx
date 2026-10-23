@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
 });
 
-const SITE_URL = "https://lumenanalytics.projectnexuscode.org";
+const SITE_URL = "https://lumenanalytics.paradigm.codes";
 const SITE_DESCRIPTION =
   "Customer behavior and revenue analytics for B2B SaaS. See changes in your business before they hit your P&L.";
 

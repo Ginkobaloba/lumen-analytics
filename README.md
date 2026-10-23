@@ -3,7 +3,7 @@
 A fictional B2B SaaS customer behavior and revenue analytics platform,
 built as a portfolio demo for Paradigm Coding Solutions.
 
-**Live:** https://lumenanalytics.projectnexuscode.org (pending Phase 0 deploy)
+**Live:** https://lumenanalytics.paradigm.codes (moved from lumenanalytics.projectnexuscode.org, which redirects until that domain lapses)
 
 > See changes in your business before they hit your P&L.
 

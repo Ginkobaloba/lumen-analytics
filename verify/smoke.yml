@@ -9,7 +9,7 @@
 #   json_path_equals  -- checks that a JSONPath expression equals `expect`
 
 target: lumen-analytics
-deploy_url: https://lumenanalytics.projectnexuscode.org
+deploy_url: https://lumenanalytics.paradigm.codes
 
 surfaces:
   - name: home
@@ -25,13 +25,13 @@ surfaces:
     assertions:
       # /app requires lumen_demo_session cookie; unauthenticated request
       # must redirect back to the landing page
-      - { type: redirects_to, expect: "https://lumenanalytics.projectnexuscode.org/?signin=required" }
+      - { type: redirects_to, expect: "https://lumenanalytics.paradigm.codes/?signin=required" }
 
   - name: anomaly-log
     url: /app/anomalies
     assertions:
       # Also redirects to landing when unauthenticated
-      - { type: redirects_to, expect: "https://lumenanalytics.projectnexuscode.org/?signin=required" }
+      - { type: redirects_to, expect: "https://lumenanalytics.paradigm.codes/?signin=required" }
 
   - name: anomaly-api
     url: /api/anomalies/1
